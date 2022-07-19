@@ -28,7 +28,8 @@ type ChordNode struct {
 	server     *rpc.Server
 	listener   net.Listener
 	online     bool
-	quitSignal chan bool
+	onlineLock sync.RWMutex
+	shutdown   chan bool
 
 	NodeRecord
 	predecessor     NodeRecord
@@ -49,6 +50,24 @@ type Pair struct {
 	value string
 }
 
+func (node *ChordNode) isOnline() bool {
+	node.onlineLock.RLock()
+	result := node.online
+	node.onlineLock.RUnlock()
+	return result
+}
+
+func (node *ChordNode) setOnline() {
+	node.onlineLock.Lock()
+	node.online = true
+	node.onlineLock.Unlock()
+}
+func (node *ChordNode) setOffline() {
+	node.onlineLock.Lock()
+	node.online = false
+	node.onlineLock.Unlock()
+}
+
 func (node *ChordNode) Initialize(addr string) {
 	node.online = false
 	node.addr = addr
@@ -62,6 +81,14 @@ func (node *ChordNode) Initialize(addr string) {
 	go node.Serve()
 }
 
+func (node *ChordNode) PrintSelf() {
+	info := fmt.Sprintf("I'm [%s], online: %v, predecessor: [%s], successors:", node.addr, node.isOnline(), node.predecessor.addr)
+	for i := 0; i < successorListLen; i++ {
+		info += fmt.Sprintf("[%s] ", node.successorList[i].addr)
+	}
+	logrus.Infoln(info)
+}
+
 func (node *ChordNode) Serve() {
 	defer func() {
 		node.listener.Close()
@@ -69,7 +96,7 @@ func (node *ChordNode) Serve() {
 	for {
 		conn, err := node.listener.Accept()
 		select {
-		case <-node.quitSignal:
+		case <-node.shutdown:
 			return
 		default:
 			if err != nil {
@@ -82,7 +109,8 @@ func (node *ChordNode) Serve() {
 }
 
 // func (node *ChordNode) Hello(_ string, reply *string) error {
-// 	fmt.Printf("\"Hello!\", said by node %p.\n", node)
+// 	*reply = fmt.Sprintf("\"Hello!\", said by node [%s].\n", node.addr)
+// 	logrus.Infoln(*reply)
 // 	return nil
 // }
 
@@ -99,7 +127,7 @@ func (node *ChordNode) Create() {
 	for i := 0; i < hashLength; i++ {
 		node.finger[i] = NodeRecord{node.addr, node.ID}
 	}
-	node.online = true
+	node.setOnline()
 	node.maintain()
 }
 
@@ -148,7 +176,7 @@ func (node *ChordNode) Join(addr string) bool {
 			node.fingerLock.Unlock()
 		}
 	}
-	node.online = true
+	node.setOnline()
 	node.maintain()
 	return true
 }
@@ -192,12 +220,15 @@ func (node *ChordNode) GetPredecessor(_ string, addr *string) error {
 }
 
 func (node *ChordNode) stabilize() {
+	logrus.Infof("<stabilize> [%s] online: %v\n", node.addr, node.isOnline())
+
 	suc := node.getOnlineSuccessor()
+	logrus.Infof("<stabilize> [%s] online successor: [%s]\n", node.addr, suc.addr)
 	var newSuc NodeRecord
 	RemoteCall(suc.addr, "ChordNode.GetPredecessor", "", &newSuc.addr)
 	newSuc.ID = Hash(newSuc.addr)
 	logrus.Infof("<stabilize> newSucID %v node.ID %v suc.ID %v\n", newSuc, node.ID, suc.ID)
-	if contains(newSuc.ID, node.ID, suc.ID) {
+	if newSuc.addr != "" && contains(newSuc.ID, node.ID, suc.ID) {
 		suc = newSuc
 	}
 	var tmpList [successorListLen]NodeRecord
@@ -302,7 +333,9 @@ func (node *ChordNode) maintain() {
 // "Quit" will not be called before "Create" or "Join".
 // For a dhtNode, "Quit" may be called for many times.
 // For a quited node, call "Quit" again should have no effect.
-func (node *ChordNode) Quit() {}
+func (node *ChordNode) Quit() {
+	node.setOffline()
+}
 
 // Chord offers a way of "normal" quitting.
 // For "force quit", the node quit the network without informing other nodes.
@@ -313,18 +346,21 @@ func (node *ChordNode) ForceQuit() {}
 func (node *ChordNode) Ping(addr string) bool {
 	client, err := GetClient(addr)
 	if err != nil {
+		logrus.Errorf("<Ping> [%s] ping [%s] err: %v\n", node.addr, addr, err)
 		return false
 	}
 	if client != nil {
-		defer client.Close()
+		client.Close()
 	}
 	return true
 }
 
 func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {
+	logrus.Infof("<FindSuccessor> [%s] find %s\n", node.addr, id.String())
 	suc := node.getOnlineSuccessor()
+	logrus.Infof("<FindSuccessor> [%s] online successor: [%s]%s\n", node.addr, suc.addr, suc.ID.String())
 
-	if id == suc.ID || contains(id, node.ID, suc.ID) {
+	if id.Cmp(suc.ID) == 0 || contains(id, node.ID, suc.ID) {
 		*result = suc.addr
 		return nil
 	}
@@ -333,8 +369,10 @@ func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {
 }
 
 func (node *ChordNode) getOnlineSuccessor() NodeRecord {
+	// node.PrintSelf()
 	for i := 0; i < successorListLen; i++ {
 		if node.Ping(node.successorList[i].addr) {
+			logrus.Infof("<getOnlineSuccessor> find [%s]'s successor: [%s]\n", node.addr, node.successorList[i].addr)
 			return node.successorList[i]
 		}
 	}
