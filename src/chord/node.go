@@ -182,19 +182,20 @@ func (node *ChordNode) Join(addr string) bool {
 	node.finger[0] = suc
 	node.fingerLock.Unlock()
 
-	for i := 1; i < hashLength; i++ {
-		start := hashAdd(node.ID, 1<<i)
-		var fingerAddr string
-		err = RemoteCall(suc.Addr, "ChordNode.FindSuccessor", start, &fingerAddr)
-		if err != nil {
-			logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.Addr, suc.Addr, err.Error())
-		} else {
-			node.fingerLock.Lock()
-			node.finger[i].Addr = fingerAddr
-			node.finger[i].ID = Hash(fingerAddr)
-			node.fingerLock.Unlock()
-		}
-	}
+	// for i := 1; i < hashLength; i++ {
+	// 	start := hashAdd(node.ID, 1<<i)
+	// 	var fingerAddr string
+	// 	err = RemoteCall(suc.Addr, "ChordNode.FindSuccessor", start, &fingerAddr)
+	// 	if err != nil {
+	// 		logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.Addr, suc.Addr, err.Error())
+	// 	} else {
+	// 		node.fingerLock.Lock()
+	// 		node.finger[i].Addr = fingerAddr
+	// 		node.finger[i].ID = Hash(fingerAddr)
+	// 		node.fingerLock.Unlock()
+	// 	}
+	// }
+
 	node.setOnline()
 	go node.Serve()
 	node.maintain()
