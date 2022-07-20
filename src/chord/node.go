@@ -459,20 +459,21 @@ func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {
 
 func (node *ChordNode) getOnlineSuccessor() NodeRecord {
 	// node.PrintSelf()
-	node.successorLock.RLock()
-	defer node.successorLock.RUnlock()
 	for i := 0; i < successorListLen; i++ {
-		if node.successorList[i].Addr != "" && node.Ping(node.successorList[i].Addr) {
-			logrus.Infof("<getOnlineSuccessor> find [%s]'s successor: [%s]\n", node.Addr, node.successorList[i].Addr)
+		node.successorLock.RLock()
+		suc := node.successorList[i]
+		node.successorLock.RUnlock()
+		if suc.Addr != "" && node.Ping(suc.Addr) {
+			logrus.Infof("<getOnlineSuccessor> find [%s]'s successor: [%s]\n", node.name(), node.successorList[i].Addr)
 			if i > 0 {
 				node.successorLock.Lock()
 				for j := i; j < successorListLen; j++ {
 					node.successorList[j-i] = node.successorList[j]
 				}
 				node.successorLock.Unlock()
-				RemoteCall(node.successorList[0].Addr, "ChordNode.Notify", node.Addr, nil)
+				RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
 			}
-			return node.successorList[0]
+			return suc
 		}
 	}
 	logrus.Errorf("<getOnlineSuccessor> cannot find successor of [%s]\n", node.Addr)
