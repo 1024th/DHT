@@ -45,8 +45,8 @@ type ChordNode struct {
 }
 
 type Pair struct {
-	key   string
-	value string
+	Key   string
+	Value string
 }
 
 func (node *ChordNode) isOnline() bool {
@@ -444,7 +444,7 @@ func (node *ChordNode) closestPrecedingFinger(id *big.Int) (addr string) {
 
 func (node *ChordNode) PutValue(pair Pair, _ *string) error {
 	node.dataLock.Lock()
-	node.data[pair.key] = pair.value
+	node.data[pair.Key] = pair.Value
 	node.dataLock.Unlock()
 	suc := node.getOnlineSuccessor()
 	err := RemoteCall(suc.Addr, "ChordNode.PutInBackup", pair, nil)
