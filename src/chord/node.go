@@ -320,6 +320,11 @@ func (node *ChordNode) stabilize() {
 	RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
 }
 
+func (node *ChordNode) Stabilize(_ string, _ *string) error {
+	node.stabilize()
+	return nil
+}
+
 func (node *ChordNode) addToBackup(preData map[string]string) {
 	node.backupLock.Lock()
 	for k, v := range preData {
@@ -382,12 +387,18 @@ func (node *ChordNode) backupDataToSuccessor() {
 
 func (node *ChordNode) checkPredecessor() {
 	pre := node.getPredecessor()
+	logrus.Infof("<checkPredecessor> [%s] pre [%s] ping %v\n", node.name(), pre.name(), node.Ping(pre.Addr))
 	if pre.Addr != "" && !node.Ping(pre.Addr) {
 		logrus.Warnf("<checkPredecessor> [%s] fail\n", node.Addr)
 		node.setPredecessor("")
 		node.mergeBackupToData()
 		node.backupDataToSuccessor()
 	}
+}
+
+func (node *ChordNode) CheckPredecessor(_ string, _ *string) error {
+	node.checkPredecessor()
+	return nil
 }
 
 func (node *ChordNode) maintain() {
@@ -418,6 +429,15 @@ func (node *ChordNode) maintain() {
 func (node *ChordNode) Quit() {
 	logrus.Infof("<Quit> [%s]\n", node.Addr)
 	node.setOffline()
+	suc := node.getOnlineSuccessor()
+	err := RemoteCall(suc.Addr, "ChordNode.CheckPredecessor", "", nil)
+	if err != nil {
+		logrus.Errorf("<Quit> [%s] call [%s] CheckPredecessor err: %v\n", node.name(), suc.name(), err)
+	}
+	err = RemoteCall(node.predecessor.Addr, "ChordNode.Stabilize", "", nil)
+	if err != nil {
+		logrus.Errorf("<Quit> [%s] call [%s] Stabilize err: %v\n", node.name(), node.predecessor.name(), err)
+	}
 }
 
 // Chord offers a way of "normal" quitting.
