@@ -135,8 +135,8 @@ func (node *ChordNode) Create() {
 		node.finger[i] = NodeRecord{node.Addr, node.ID}
 	}
 	node.setOnline()
-	node.maintain()
 	go node.Serve()
+	node.maintain()
 }
 
 func (node *ChordNode) GetSuccessorList(_ string, result *[successorListLen]NodeRecord) error {
@@ -196,8 +196,10 @@ func (node *ChordNode) Join(addr string) bool {
 		}
 	}
 	node.setOnline()
-	node.maintain()
 	go node.Serve()
+	node.maintain()
+	// node.stabilize()
+	// time.Sleep(10 * time.Millisecond)
 	return true
 }
 
