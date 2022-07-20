@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"net"
 	"net/rpc"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,9 +81,9 @@ func (node *ChordNode) Initialize(addr string) {
 }
 
 func (node *ChordNode) PrintSelf() {
-	info := fmt.Sprintf("I'm [%s], online: %v, predecessor: [%s], successors:", node.Addr, node.isOnline(), node.predecessor.Addr)
+	info := fmt.Sprintf("I'm [%s], online: %v, predecessor: [%s], successors:", node.name(), node.isOnline(), node.predecessor.name())
 	for i := 0; i < successorListLen; i++ {
-		info += fmt.Sprintf("[%s] ", node.successorList[i].Addr)
+		info += fmt.Sprintf("[%s] ", node.successorList[i].name())
 	}
 	info += "\n"
 	logrus.Info(info)
@@ -105,11 +106,11 @@ func (node *ChordNode) Serve() {
 			return
 		}
 		// count++
-		// logrus.Infof("<Serve> [%s] connect num: %d\n", node.Addr, count)
+		// logrus.Infof("<Serve> [%s] connect num: %d\n", node.name(), count)
 		// go func() {
 		// 	node.server.ServeConn(conn)
 		// 	count--
-		// 	logrus.Infof("<Serve> [%s] connect num: %d\n", node.Addr, count)
+		// 	logrus.Infof("<Serve> [%s] connect num: %d\n", node.name(), count)
 		// }()
 		go node.server.ServeConn(conn)
 	}
@@ -142,7 +143,7 @@ func (node *ChordNode) Create() {
 
 func (node *ChordNode) GetSuccessorList(_ string, result *[successorListLen]NodeRecord) error {
 	node.successorLock.RLock()
-	logrus.Infof("<GetSuccessorList> [%s] sucList: %s\n", node.Addr, sucListToString(&node.successorList))
+	logrus.Infof("<GetSuccessorList> [%s] sucList: %s\n", node.name(), sucListToString(&node.successorList))
 	*result = node.successorList
 	// for i := 0; i < successorListLen; i++ {
 	// 	result[i].Addr = node.successorList[i].Addr
@@ -184,7 +185,7 @@ func (node *ChordNode) TransferData(preAddr string, preData *map[string]string) 
 	suc := node.getOnlineSuccessor()
 	err := RemoteCall(suc.Addr, "ChordNode.ShrinkBackup", *preData, nil)
 	if err != nil {
-		logrus.Errorf("<TransferData> [%s] pre [%s] err: %v\n", node.Addr, preAddr, err)
+		logrus.Errorf("<TransferData> [%s] pre [%s] err: %v\n", node.name(), preAddr, err)
 		return err
 	}
 	// node.Notify(preAddr, nil)
@@ -200,7 +201,7 @@ func (node *ChordNode) Join(addr string) bool {
 	var suc NodeRecord
 	err := RemoteCall(addr, "ChordNode.FindSuccessor", Hash(addr), &suc.Addr)
 	if err != nil {
-		logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.Addr, addr, err)
+		logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.name(), addr, err)
 	}
 	suc.ID = Hash(suc.Addr)
 	var tmpList [successorListLen]NodeRecord
@@ -221,7 +222,7 @@ func (node *ChordNode) Join(addr string) bool {
 	// 	var fingerAddr string
 	// 	err = RemoteCall(suc.Addr, "ChordNode.FindSuccessor", start, &fingerAddr)
 	// 	if err != nil {
-	// 		logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.Addr, suc.Addr, err.Error())
+	// 		logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.name(), suc.name(), err.Error())
 	// 	} else {
 	// 		node.fingerLock.Lock()
 	// 		node.finger[i].Addr = fingerAddr
@@ -233,7 +234,7 @@ func (node *ChordNode) Join(addr string) bool {
 	err = RemoteCall(suc.Addr, "ChordNode.TransferData", node.Addr, &node.data)
 	node.dataLock.Unlock()
 	if err != nil {
-		logrus.Errorf("<Join> [%s] TransferData from suc [%s] err: %v\n", node.Addr, suc.Addr, err)
+		logrus.Errorf("<Join> [%s] TransferData from suc [%s] err: %v\n", node.name(), suc.name(), err)
 		return false
 	}
 
@@ -250,7 +251,7 @@ func (node *ChordNode) fixFinger() {
 	var res string
 	err := node.FindSuccessor(t, &res)
 	if err != nil {
-		logrus.Errorf("<fixFinger> [%s] Find Successor of %v err: %v", node.Addr, t, err)
+		logrus.Errorf("<fixFinger> [%s] Find Successor of %v err: %v\n", node.name(), t, err)
 		return
 	}
 	node.fingerLock.RLock()
@@ -286,16 +287,16 @@ func (node *ChordNode) GetPredecessor(_ string, addr *string) error {
 func sucListToString(sucList *[successorListLen]NodeRecord) string {
 	var res string
 	for i := 0; i < successorListLen; i++ {
-		res += fmt.Sprintf("[%s] ", (*sucList)[i].Addr)
+		res += fmt.Sprintf("[%s] ", (*sucList)[i].name())
 	}
 	return res
 }
 
 func (node *ChordNode) stabilize() {
-	logrus.Infof("<stabilize> [%s] online: %v\n", node.Addr, node.isOnline())
+	logrus.Infof("<stabilize> [%s] online: %v\n", node.name(), node.isOnline())
 
 	suc := node.getOnlineSuccessor()
-	logrus.Infof("<stabilize> [%s] online successor: [%s]\n", node.Addr, suc.Addr)
+	logrus.Infof("<stabilize> [%s] online successor: [%s]\n", node.name(), suc.name())
 	var newSuc NodeRecord
 	RemoteCall(suc.Addr, "ChordNode.GetPredecessor", "", &newSuc.Addr)
 	newSuc.ID = Hash(newSuc.Addr)
@@ -306,16 +307,16 @@ func (node *ChordNode) stabilize() {
 	var tmpList [successorListLen]NodeRecord
 	err := RemoteCall(suc.Addr, "ChordNode.GetSuccessorList", "", &tmpList)
 	if err != nil {
-		logrus.Infof("<stabilize> [%s] GetSuccessorList of [%s] err: %v\n", node.Addr, suc.Addr, err)
+		logrus.Infof("<stabilize> [%s] GetSuccessorList of [%s] err: %v\n", node.name(), suc.name(), err)
 	}
-	logrus.Infof("<stabilize> [%s] suc [%s]'s sucList: %s\n", node.Addr, suc.Addr, sucListToString(&tmpList))
+	logrus.Infof("<stabilize> [%s] suc [%s]'s sucList: %s\n", node.name(), suc.name(), sucListToString(&tmpList))
 	node.successorLock.Lock()
 	node.successorList[0] = suc
 	for i := 1; i < successorListLen; i++ {
 		node.successorList[i] = tmpList[i-1]
 	}
 	node.successorLock.Unlock()
-	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.Addr, suc.Addr)
+	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.name(), suc.name())
 	RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
 }
 
@@ -344,14 +345,14 @@ func (node *ChordNode) GetData(_ string, res *map[string]string) error {
 }
 
 func (node *ChordNode) Notify(newPre string, _ *string) error {
-	logrus.Infof("<Notify> [%s] newPre [%s]\n", node.Addr, newPre)
+	logrus.Infof("<Notify> [%s] newPre [%s]\n", node.name(), getPortFromIP(newPre))
 	pre := node.getPredecessor()
 	if pre.Addr == "" || contains(Hash(newPre), pre.ID, node.ID) {
-		logrus.Infof("<Notify> [%s] set predecessor to [%s]\n", node.Addr, newPre)
+		logrus.Infof("<Notify> [%s] set predecessor to [%s]\n", node.name(), newPre)
 		newPreData := make(map[string]string)
 		err := RemoteCall(newPre, "ChordNode.GetData", "", &newPreData)
 		if err != nil {
-			logrus.Errorf("<Notify> [%s] get data from [%s] err: %v\n", node.Addr, newPre, err)
+			logrus.Errorf("<Notify> [%s] get data from [%s] err: %v\n", node.name(), newPre, err)
 			return err
 		}
 		node.addToBackup(newPreData) // TODO: remove from node.data?
@@ -426,8 +427,13 @@ func (node *ChordNode) ForceQuit() {}
 
 // Check whether the node represented by the IP address is in the network.
 func (node *ChordNode) Ping(addr string) bool {
+	// pc, _, _, ok := runtime.Caller(1)
+	// details := runtime.FuncForPC(pc)
+	// if ok && details != nil {
+	// 	logrus.Infof("<Ping> called from <%s>\n", details.Name())
+	// }
 	if addr == "" {
-		logrus.Errorf("<Ping> [%s] ping [%s] err: empty address\n", node.Addr, addr)
+		logrus.Errorf("<Ping> [%s] ping [%s] err: empty address\n", node.name(), addr)
 		return false
 	}
 	if addr == node.Addr {
@@ -435,7 +441,7 @@ func (node *ChordNode) Ping(addr string) bool {
 	}
 	client, err := GetClient(addr)
 	if err != nil {
-		logrus.Errorf("<Ping> [%s] ping [%s] err: %v\n", node.Addr, addr, err)
+		logrus.Errorf("<Ping> [%s] ping [%s] err: %v\n", node.name(), addr, err)
 		return false
 	}
 	if client != nil {
@@ -445,9 +451,13 @@ func (node *ChordNode) Ping(addr string) bool {
 }
 
 func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {
-	logrus.Infof("<FindSuccessor> [%s] find %s\n", node.Addr, id.String())
+	logrus.Infof("<FindSuccessor> [%s] find %s\n", node.name(), id.String())
 	suc := node.getOnlineSuccessor()
-	logrus.Infof("<FindSuccessor> [%s] online successor: [%s]%s\n", node.Addr, suc.Addr, suc.ID.String())
+	if suc.Addr == "" {
+		return fmt.Errorf("Cannot find successor of [%s]", node.Addr)
+	}
+	logrus.Infof("<FindSuccessor> [%s] online successor: [%s]%s\n", node.name(), suc.name(), suc.ID.String())
+	logrus.Infof("<FindSuccessor> [%s] target: %s self: %s suc: %s contains:%v\n", node.name(), id, node.ID, suc.ID.String(), contains(id, node.ID, suc.ID))
 
 	if id.Cmp(suc.ID) == 0 || contains(id, node.ID, suc.ID) {
 		*result = suc.Addr
@@ -500,7 +510,7 @@ func (node *ChordNode) PutValue(pair Pair, _ *string) error {
 	suc := node.getOnlineSuccessor()
 	err := RemoteCall(suc.Addr, "ChordNode.PutInBackup", pair, nil)
 	if err != nil {
-		logrus.Errorf("<DeleteValue> delete in [%s]'s backup, err: %v\n", suc.Addr, err)
+		logrus.Errorf("<DeleteValue> [%s] delete in [%s]'s backup, err: %v\n", node.name(), suc.name(), err)
 		return err
 	}
 	return nil
@@ -522,7 +532,7 @@ func (node *ChordNode) Put(key string, value string) bool {
 	var target string
 	err := node.FindSuccessor(Hash(key), &target)
 	if err != nil {
-		logrus.Errorf("<Put> [%s] find successor of key %v err: %v\n", node.Addr, key, err)
+		logrus.Errorf("<Put> [%s] find successor of key %v err: %v\n", node.name(), key, err)
 		return false
 	}
 	err = RemoteCall(target, "ChordNode.PutValue", Pair{key, value}, nil)
@@ -555,7 +565,7 @@ func (node *ChordNode) Get(key string) (bool, string) {
 	var target string
 	err := node.FindSuccessor(Hash(key), &target)
 	if err != nil {
-		logrus.Errorf("<Get> [%s] find successor of key %v err: %v\n", node.Addr, key, err)
+		logrus.Errorf("<Get> [%s] find successor of key %v err: %v\n", node.name(), key, err)
 		return false, ""
 	}
 	var value string
@@ -578,7 +588,7 @@ func (node *ChordNode) DeleteValue(key string, _ *string) error {
 	suc := node.getOnlineSuccessor()
 	err := RemoteCall(suc.Addr, "ChordNode.DeleteInBackup", key, nil)
 	if err != nil {
-		logrus.Errorf("<DeleteValue> delete in [%s]'s backup, err: %v\n", suc.Addr, err)
+		logrus.Errorf("<DeleteValue> delete in [%s]'s backup, err: %v\n", suc.name(), err)
 		return err
 	}
 	return nil
@@ -605,7 +615,7 @@ func (node *ChordNode) Delete(key string) bool {
 	var target string
 	err := node.FindSuccessor(Hash(key), &target)
 	if err != nil {
-		logrus.Errorf("<Delete> [%s] find successor of key %v err: %v\n", node.Addr, key, err)
+		logrus.Errorf("<Delete> [%s] find successor of key %v err: %v\n", node.name(), key, err)
 		return false
 	}
 	var value string
@@ -615,4 +625,12 @@ func (node *ChordNode) Delete(key string) bool {
 		return false
 	}
 	return true
+}
+
+func (node *NodeRecord) name() string {
+	return getPortFromIP(node.Addr)
+}
+
+func getPortFromIP(ip string) string {
+	return ip[strings.Index(ip, ":")+1:]
 }
