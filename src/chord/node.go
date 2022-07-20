@@ -157,6 +157,39 @@ func (node *ChordNode) GetSuccessorList(_ string, result *[successorListLen]Node
 	return nil
 }
 
+func (node *ChordNode) ShrinkBackup(removeFromBak map[string]string, _ *string) error {
+	node.backupLock.Lock()
+	for k := range removeFromBak {
+		delete(node.backup, k)
+	}
+	node.backupLock.Unlock()
+	return nil
+}
+
+func (node *ChordNode) TransferData(preAddr string, preData *map[string]string) error {
+	preID := Hash(preAddr)
+	node.dataLock.Lock()
+	node.backupLock.Lock()
+	for k, v := range node.data {
+		kID := Hash(k)
+		if kID.Cmp(node.ID) != 0 && !contains(kID, preID, node.ID) {
+			(*preData)[k] = v
+			node.backup[k] = v
+			delete(node.data, k)
+		}
+	}
+	node.dataLock.Unlock()
+	node.backupLock.Unlock()
+	suc := node.getOnlineSuccessor()
+	err := RemoteCall(suc.Addr, "ChordNode.ShrinkBackup", *preData, nil)
+	if err != nil {
+		logrus.Errorf("<TransferData> [%s] pre [%s] err: %v\n", node.Addr, preAddr, err)
+		return err
+	}
+	// node.Notify(preAddr, nil)
+	return nil
+}
+
 // Join an existing network. Return "true" if join succeeded and "false" if not.
 func (node *ChordNode) Join(addr string) bool {
 	if node.online {
@@ -195,6 +228,13 @@ func (node *ChordNode) Join(addr string) bool {
 	// 		node.fingerLock.Unlock()
 	// 	}
 	// }
+	node.dataLock.Lock()
+	err = RemoteCall(suc.Addr, "ChordNode.TransferData", node.Addr, &node.data)
+	node.dataLock.Unlock()
+	if err != nil {
+		logrus.Errorf("<Join> [%s] TransferData from suc [%s] err: %v\n", node.Addr, suc.Addr, err)
+		return false
+	}
 
 	node.setOnline()
 	go node.Serve()
@@ -310,7 +350,7 @@ func (node *ChordNode) Notify(newPre string, _ *string) error {
 		newPreData := make(map[string]string)
 		err := RemoteCall(newPre, "ChordNode.GetData", "", &newPreData)
 		if err != nil {
-			logrus.Errorf("<Notify> [%s] get data from [%d] err: %v\n", node.Addr, newPre, err)
+			logrus.Errorf("<Notify> [%s] get data from [%s] err: %v\n", node.Addr, newPre, err)
 			return err
 		}
 		node.addToBackup(newPreData) // TODO: remove from node.data?
