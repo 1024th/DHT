@@ -95,7 +95,6 @@ func (node *ChordNode) Serve() {
 	}()
 	for node.isOnline() {
 		conn, err := node.listener.Accept()
-		logrus.Infof("<Serve> [%s] accept\n", node.Addr)
 		if !node.isOnline() {
 			logrus.Warnf("<Serve> [%s] offline, stop serving...\n", node.Addr)
 			break
@@ -414,7 +413,7 @@ func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {
 func (node *ChordNode) getOnlineSuccessor() NodeRecord {
 	// node.PrintSelf()
 	for i := 0; i < successorListLen; i++ {
-		if node.Ping(node.successorList[i].Addr) {
+		if node.successorList[i].Addr != "" && node.Ping(node.successorList[i].Addr) {
 			logrus.Infof("<getOnlineSuccessor> find [%s]'s successor: [%s]\n", node.Addr, node.successorList[i].Addr)
 			if i > 0 {
 				for j := i; j < successorListLen; j++ {
@@ -431,10 +430,10 @@ func (node *ChordNode) getOnlineSuccessor() NodeRecord {
 
 func (node *ChordNode) closestPrecedingFinger(id *big.Int) (addr string) {
 	for i := hashLength - 1; i >= 0; i-- {
-		if !node.Ping(node.finger[i].Addr) {
+		if node.finger[i].Addr != "" && !node.Ping(node.finger[i].Addr) {
 			continue
 		}
-		if contains(node.finger[i].ID, node.ID, id) {
+		if node.finger[i].ID != nil && contains(node.finger[i].ID, node.ID, id) {
 			return node.finger[i].Addr
 		}
 	}
