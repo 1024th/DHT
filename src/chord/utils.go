@@ -2,8 +2,8 @@ package chord
 
 import (
 	"crypto/sha1"
-	"errors"
 	"math/big"
+	"net"
 	"net/rpc"
 	"time"
 )
@@ -44,26 +44,16 @@ func hashAdd(x *big.Int, y int) *big.Int {
 }
 
 var (
-	timeout time.Duration = 200 * time.Millisecond
+	timeout time.Duration = 400 * time.Millisecond
 )
 
 func GetClient(addr string) (*rpc.Client, error) {
-	var (
-		client *rpc.Client
-		err    error
-		ch     chan bool = make(chan bool)
-	)
-	go func() {
-		client, err = rpc.Dial("tcp", addr)
-		ch <- true
-	}()
-
-	select {
-	case <-ch:
-		return client, err
-	case <-time.After(timeout):
-		return nil, errors.New("GetClient timeout")
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return nil, err
 	}
+	client := rpc.NewClient(conn)
+	return client, err
 }
 
 func RemoteCall(addr string, serviceMethod string, args interface{}, reply interface{}) error {
