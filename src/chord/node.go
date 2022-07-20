@@ -501,6 +501,13 @@ func (node *ChordNode) PutValue(pair Pair, _ *string) error {
 	return nil
 }
 
+func (node *ChordNode) PutInBackup(pair Pair, _ *string) error {
+	node.backupLock.Lock()
+	node.backup[pair.Key] = pair.Value
+	node.backupLock.Unlock()
+	return nil
+}
+
 // Put a key-value pair into the network (if KEY is already in the network, cover it)
 func (node *ChordNode) Put(key string, value string) bool {
 	if !node.online {
