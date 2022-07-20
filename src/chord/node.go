@@ -89,7 +89,7 @@ func (node *ChordNode) PrintSelf() {
 }
 
 func (node *ChordNode) Serve() {
-	count := 0
+	// count := 0
 	defer func() {
 		node.listener.Close()
 	}()
@@ -104,13 +104,14 @@ func (node *ChordNode) Serve() {
 			logrus.Errorf("<Serve> [%s], listener accept error, stop serving.", node.Addr)
 			return
 		}
-		count++
-		logrus.Infof("<Serve> [%s] connect num: %d\n", node.Addr, count)
-		go func() {
-			node.server.ServeConn(conn)
-			count--
-			logrus.Infof("<Serve> [%s] connect num: %d\n", node.Addr, count)
-		}()
+		// count++
+		// logrus.Infof("<Serve> [%s] connect num: %d\n", node.Addr, count)
+		// go func() {
+		// 	node.server.ServeConn(conn)
+		// 	count--
+		// 	logrus.Infof("<Serve> [%s] connect num: %d\n", node.Addr, count)
+		// }()
+		go node.server.ServeConn(conn)
 	}
 	logrus.Warnf("<Serve> [%s] stop serving.\n", node.Addr)
 }
@@ -428,6 +429,9 @@ func (node *ChordNode) Ping(addr string) bool {
 	if addr == "" {
 		logrus.Errorf("<Ping> [%s] ping [%s] err: empty address\n", node.Addr, addr)
 		return false
+	}
+	if addr == node.Addr {
+		return true
 	}
 	client, err := GetClient(addr)
 	if err != nil {
