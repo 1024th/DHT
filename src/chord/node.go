@@ -84,25 +84,36 @@ func (node *ChordNode) PrintSelf() {
 	for i := 0; i < successorListLen; i++ {
 		info += fmt.Sprintf("[%s] ", node.successorList[i].Addr)
 	}
-	logrus.Infoln(info)
+	info += "\n"
+	logrus.Info(info)
 }
 
 func (node *ChordNode) Serve() {
+	count := 0
 	defer func() {
 		node.listener.Close()
 	}()
 	for node.isOnline() {
 		conn, err := node.listener.Accept()
+		logrus.Infof("<Serve> [%s] accept\n", node.Addr)
 		if !node.isOnline() {
+			logrus.Warnf("<Serve> [%s] offline, stop serving...\n", node.Addr)
 			break
 		}
 
 		if err != nil {
-			logrus.Errorf("node %s, listener accept error, stop serving.", node.Addr)
+			logrus.Errorf("<Serve> [%s], listener accept error, stop serving.", node.Addr)
 			return
 		}
-		go node.server.ServeConn(conn)
+		count++
+		logrus.Infof("<Serve> [%s] connect num: %d\n", node.Addr, count)
+		go func() {
+			node.server.ServeConn(conn)
+			count--
+			logrus.Infof("<Serve> [%s] connect num: %d\n", node.Addr, count)
+		}()
 	}
+	logrus.Warnf("<Serve> [%s] stop serving.\n", node.Addr)
 }
 
 // func (node *ChordNode) Hello(_ string, reply *string) error {
@@ -246,7 +257,7 @@ func (node *ChordNode) stabilize() {
 	RemoteCall(suc.Addr, "ChordNode.GetPredecessor", "", &newSuc.Addr)
 	newSuc.ID = Hash(newSuc.Addr)
 	logrus.Infof("<stabilize> newSucID %v node.ID %v suc.ID %v\n", newSuc, node.ID, suc.ID)
-	if newSuc.Addr != "" && contains(newSuc.ID, node.ID, suc.ID) {
+	if newSuc.Addr != "" && node.Ping(newSuc.Addr) && contains(newSuc.ID, node.ID, suc.ID) {
 		suc = newSuc
 	}
 	var tmpList [successorListLen]NodeRecord
@@ -328,6 +339,8 @@ func (node *ChordNode) backupDataToSuccessor() {
 func (node *ChordNode) checkPredecessor() {
 	pre := node.getPredecessor()
 	if pre.Addr != "" && !node.Ping(pre.Addr) {
+		logrus.Warnf("<checkPredecessor> [%s] fail\n", node.Addr)
+		node.setPredecessor("")
 		node.mergeBackupToData()
 		node.backupDataToSuccessor()
 	}
@@ -359,6 +372,7 @@ func (node *ChordNode) maintain() {
 // For a dhtNode, "Quit" may be called for many times.
 // For a quited node, call "Quit" again should have no effect.
 func (node *ChordNode) Quit() {
+	logrus.Infof("<Quit> [%s]\n", node.Addr)
 	node.setOffline()
 }
 
@@ -369,6 +383,10 @@ func (node *ChordNode) ForceQuit() {}
 
 // Check whether the node represented by the IP address is in the network.
 func (node *ChordNode) Ping(addr string) bool {
+	if addr == "" {
+		logrus.Errorf("<Ping> [%s] ping [%s] err: empty address\n", node.Addr, addr)
+		return false
+	}
 	client, err := GetClient(addr)
 	if err != nil {
 		logrus.Errorf("<Ping> [%s] ping [%s] err: %v\n", node.Addr, addr, err)
@@ -398,7 +416,13 @@ func (node *ChordNode) getOnlineSuccessor() NodeRecord {
 	for i := 0; i < successorListLen; i++ {
 		if node.Ping(node.successorList[i].Addr) {
 			logrus.Infof("<getOnlineSuccessor> find [%s]'s successor: [%s]\n", node.Addr, node.successorList[i].Addr)
-			return node.successorList[i]
+			if i > 0 {
+				for j := i; j < successorListLen; j++ {
+					node.successorList[j-i] = node.successorList[j]
+				}
+				RemoteCall(node.successorList[0].Addr, "ChordNode.Notify", node.Addr, nil)
+			}
+			return node.successorList[0]
 		}
 	}
 	logrus.Errorf("<getOnlineSuccessor> cannot find successor of [%s]\n", node.Addr)
