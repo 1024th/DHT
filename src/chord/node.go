@@ -29,7 +29,6 @@ type ChordNode struct {
 	listener   net.Listener
 	online     bool
 	onlineLock sync.RWMutex
-	shutdown   chan bool
 
 	NodeRecord
 	predecessor     NodeRecord
@@ -78,7 +77,6 @@ func (node *ChordNode) Initialize(addr string) {
 	node.server = rpc.NewServer()
 	node.server.Register(node)
 	node.listener, _ = net.Listen("tcp", node.addr)
-	go node.Serve()
 }
 
 func (node *ChordNode) PrintSelf() {
@@ -93,18 +91,17 @@ func (node *ChordNode) Serve() {
 	defer func() {
 		node.listener.Close()
 	}()
-	for {
+	for node.isOnline() {
 		conn, err := node.listener.Accept()
-		select {
-		case <-node.shutdown:
-			return
-		default:
-			if err != nil {
-				logrus.Errorf("node %s, listener accept error, stop serving.", node.addr)
-				return
-			}
-			go node.server.ServeConn(conn)
+		if !node.isOnline() {
+			break
 		}
+
+		if err != nil {
+			logrus.Errorf("node %s, listener accept error, stop serving.", node.addr)
+			return
+		}
+		go node.server.ServeConn(conn)
 	}
 }
 
@@ -129,6 +126,7 @@ func (node *ChordNode) Create() {
 	}
 	node.setOnline()
 	node.maintain()
+	go node.Serve()
 }
 
 func (node *ChordNode) GetSuccessorList(_ string, result *[successorListLen]NodeRecord) error {
@@ -178,6 +176,7 @@ func (node *ChordNode) Join(addr string) bool {
 	}
 	node.setOnline()
 	node.maintain()
+	go node.Serve()
 	return true
 }
 
