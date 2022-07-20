@@ -210,7 +210,7 @@ func (node *ChordNode) setPredecessor(newPre string) {
 	node.predecessorLock.Lock()
 	node.predecessor.addr = newPre
 	node.predecessor.ID = Hash(newPre)
-	node.predecessorLock.RUnlock()
+	node.predecessorLock.Unlock()
 }
 
 func (node *ChordNode) GetPredecessor(_ string, addr *string) error {
@@ -231,14 +231,15 @@ func (node *ChordNode) stabilize() {
 		suc = newSuc
 	}
 	var tmpList [successorListLen]NodeRecord
-	RemoteCall(suc.addr, "Chord.GetSuccessorList", "", &tmpList)
+	RemoteCall(suc.addr, "ChordNode.GetSuccessorList", "", &tmpList)
 	node.successorLock.Lock()
 	node.successorList[0] = suc
 	for i := 1; i < successorListLen; i++ {
 		node.successorList[i] = tmpList[i-1]
 	}
 	node.successorLock.Unlock()
-	RemoteCall(suc.addr, "Chord.Notify", node.addr, nil)
+	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.addr, suc.addr)
+	RemoteCall(suc.addr, "ChordNode.Notify", node.addr, nil)
 }
 
 func (node *ChordNode) addToBackup(preData map[string]string) {
@@ -266,10 +267,12 @@ func (node *ChordNode) GetData(_ string, res *map[string]string) error {
 }
 
 func (node *ChordNode) Notify(newPre string, _ *string) error {
+	logrus.Infof("<Notify> [%s] newPre [%s]\n", node.addr, newPre)
 	pre := node.getPredecessor()
 	if pre.addr == "" || contains(Hash(newPre), pre.ID, node.ID) {
+		logrus.Infof("<Notify> [%s] set predecessor to [%s]\n", node.addr, newPre)
 		newPreData := make(map[string]string)
-		err := RemoteCall(newPre, "Chord.GetData", "", &newPreData)
+		err := RemoteCall(newPre, "ChordNode.GetData", "", &newPreData)
 		if err != nil {
 			logrus.Errorf("<Notify> [%s] get data from [%d] err: %v\n", node.addr, newPre, err)
 			return err
@@ -296,7 +299,7 @@ func (node *ChordNode) mergeBackupToData() {
 
 func (node *ChordNode) backupDataToSuccessor() {
 	suc := node.getOnlineSuccessor()
-	RemoteCall(suc.addr, "Chord.AddToBackup", node.data, nil)
+	RemoteCall(suc.addr, "ChordNode.AddToBackup", node.data, nil)
 }
 
 func (node *ChordNode) checkPredecessor() {
