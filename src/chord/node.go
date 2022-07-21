@@ -377,12 +377,13 @@ func (node *ChordNode) Notify(newPre string, _ *string) error {
 
 func (node *ChordNode) mergeBackupToData() {
 	node.backupLock.RLock()
+	tmpBackup := node.backup
+	node.backupLock.RUnlock()
 	node.dataLock.Lock()
-	for k, v := range node.backup {
+	for k, v := range tmpBackup {
 		node.data[k] = v
 	}
 	node.dataLock.Unlock()
-	node.backupLock.RUnlock()
 
 	node.backupLock.Lock()
 	node.backup = make(map[string]string)
