@@ -73,6 +73,8 @@ func (node *ChordNode) Initialize(addr string) {
 	node.Addr = addr
 	node.ID = Hash(addr)
 	node.clear()
+	node.server = rpc.NewServer()
+	node.server.Register(node)
 }
 
 func (node *ChordNode) PrintSelf() {
@@ -86,8 +88,6 @@ func (node *ChordNode) PrintSelf() {
 
 func (node *ChordNode) Serve() {
 	// count := 0
-	node.server = rpc.NewServer()
-	node.server.Register(node)
 	node.listener, _ = net.Listen("tcp", node.Addr)
 	defer func() {
 		node.listener.Close()
