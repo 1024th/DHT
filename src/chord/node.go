@@ -87,8 +87,9 @@ func (node *ChordNode) PrintSelf() {
 }
 
 func (node *ChordNode) Serve() {
-	// count := 0
-	node.listener, _ = net.Listen("tcp", node.Addr)
+	logrus.Infof("<Serve> [%s] start serving...\n", node.name())
+	count := 0
+	var countLock sync.Mutex
 	// defer func() {
 	// 	node.listener.Close()
 	// }()
@@ -103,14 +104,18 @@ func (node *ChordNode) Serve() {
 			logrus.Errorf("<Serve> [%s], listener accept error, stop serving.", node.Addr)
 			return
 		}
-		// count++
-		// logrus.Infof("<Serve> [%s] connect num: %d\n", node.name(), count)
-		// go func() {
-		// 	node.server.ServeConn(conn)
-		// 	count--
-		// 	logrus.Infof("<Serve> [%s] connect num: %d\n", node.name(), count)
-		// }()
-		go node.server.ServeConn(conn)
+		countLock.Lock()
+		count++
+		countLock.Unlock()
+		// logrus.Infof("<Serve> [%s] start connect num: %d\n", node.name(), count)
+		go func() {
+			node.server.ServeConn(conn)
+			countLock.Lock()
+			count--
+			countLock.Unlock()
+			// logrus.Infof("<Serve> [%s] end connect num: %d\n", node.name(), count)
+		}()
+		// go node.server.ServeConn(conn)
 	}
 	logrus.Warnf("<Serve> [%s] stop serving.\n", node.Addr)
 }
@@ -123,6 +128,14 @@ func (node *ChordNode) Serve() {
 
 // "Run" is called after calling "NewNode".
 func (node *ChordNode) Run() {
+	// logrus.Tracef("<Run> [%s]\n", node.name())
+	node.setOnline()
+	var err error
+	node.listener, err = net.Listen("tcp", node.Addr)
+	if err != nil {
+		logrus.Errorf("<Run> [%s] listen err: %v\n", node.name(), err)
+	}
+	go node.Serve()
 }
 
 /* "Create" and "Join" are called after calling "Run".
@@ -135,7 +148,6 @@ func (node *ChordNode) Create() {
 		node.finger[i] = NodeRecord{node.Addr, node.ID}
 	}
 	node.setOnline()
-	go node.Serve()
 	node.maintain()
 }
 
@@ -237,7 +249,6 @@ func (node *ChordNode) Join(addr string) bool {
 	}
 
 	node.setOnline()
-	go node.Serve()
 	node.maintain()
 	// node.stabilize()
 	// time.Sleep(10 * time.Millisecond)
