@@ -43,8 +43,8 @@ func hashAdd(x *big.Int, y int) *big.Int {
 	return new(big.Int).And(new(big.Int).Add(x, big.NewInt(int64(y))), hashMask)
 }
 
-var (
-	timeout time.Duration = 400 * time.Millisecond
+const (
+	timeout time.Duration = 200 * time.Millisecond
 )
 
 func GetClient(addr string) (*rpc.Client, error) {
