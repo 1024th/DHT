@@ -72,12 +72,7 @@ func (node *ChordNode) Initialize(addr string) {
 	node.online = false
 	node.Addr = addr
 	node.ID = Hash(addr)
-	node.data = make(map[string]string)
-	node.backup = make(map[string]string)
-
-	node.server = rpc.NewServer()
-	node.server.Register(node)
-	node.listener, _ = net.Listen("tcp", node.Addr)
+	node.clear()
 }
 
 func (node *ChordNode) PrintSelf() {
@@ -91,6 +86,9 @@ func (node *ChordNode) PrintSelf() {
 
 func (node *ChordNode) Serve() {
 	// count := 0
+	node.server = rpc.NewServer()
+	node.server.Register(node)
+	node.listener, _ = net.Listen("tcp", node.Addr)
 	defer func() {
 		node.listener.Close()
 	}()
@@ -422,6 +420,15 @@ func (node *ChordNode) maintain() {
 	}()
 }
 
+func (node *ChordNode) clear() {
+	node.dataLock.Lock()
+	node.data = make(map[string]string)
+	node.dataLock.Unlock()
+	node.backupLock.Lock()
+	node.backup = make(map[string]string)
+	node.backupLock.Unlock()
+}
+
 // Quit from the network it is currently in.
 // "Quit" will not be called before "Create" or "Join".
 // For a dhtNode, "Quit" may be called for many times.
@@ -438,6 +445,7 @@ func (node *ChordNode) Quit() {
 	if err != nil {
 		logrus.Errorf("<Quit> [%s] call [%s] Stabilize err: %v\n", node.name(), node.predecessor.name(), err)
 	}
+	node.clear()
 }
 
 // Chord offers a way of "normal" quitting.
