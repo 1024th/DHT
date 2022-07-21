@@ -204,10 +204,10 @@ func (node *ChordNode) TransferData(preAddr string, preData *map[string]string) 
 
 // Join an existing network. Return "true" if join succeeded and "false" if not.
 func (node *ChordNode) Join(addr string) bool {
-	if node.online {
-		logrus.Errorf("<Join> [%s] already joined")
-		return false
-	}
+	// if node.online {
+	// 	logrus.Errorf("<Join> [%s] already joined")
+	// 	return false
+	// }
 	var suc NodeRecord
 	err := RemoteCall(addr, "ChordNode.FindSuccessor", Hash(addr), &suc.Addr)
 	if err != nil {
