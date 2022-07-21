@@ -89,9 +89,9 @@ func (node *ChordNode) PrintSelf() {
 func (node *ChordNode) Serve() {
 	// count := 0
 	node.listener, _ = net.Listen("tcp", node.Addr)
-	defer func() {
-		node.listener.Close()
-	}()
+	// defer func() {
+	// 	node.listener.Close()
+	// }()
 	for node.isOnline() {
 		conn, err := node.listener.Accept()
 		if !node.isOnline() {
@@ -436,6 +436,7 @@ func (node *ChordNode) clear() {
 func (node *ChordNode) Quit() {
 	logrus.Infof("<Quit> [%s]\n", node.Addr)
 	node.setOffline()
+	node.listener.Close()
 	suc := node.getOnlineSuccessor()
 	err := RemoteCall(suc.Addr, "ChordNode.CheckPredecessor", "", nil)
 	if err != nil {
