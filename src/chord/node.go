@@ -505,7 +505,7 @@ func (node *ChordNode) Ping(addr string) bool {
 			if err == nil {
 				ch <- true
 			} else {
-				logrus.Warnf("<Ping> [%s] ping [%s] err: %v\n", node.name(), addr, err)
+				logrus.Warnf("<Ping> [%s] ping [%s] err: %v\n", node.name(), getPortFromIP(addr), err)
 				ch <- false
 			}
 		}()
@@ -585,7 +585,7 @@ func (node *ChordNode) PutValue(pair Pair, _ *string) error {
 	suc := node.getOnlineSuccessor()
 	err := RemoteCall(suc.Addr, "ChordNode.PutInBackup", pair, nil)
 	if err != nil {
-		logrus.Errorf("<DeleteValue> [%s] delete in [%s]'s backup, err: %v\n", node.name(), suc.name(), err)
+		logrus.Errorf("<PutValue> [%s] put in [%s]'s backup, err: %v\n", node.name(), suc.name(), err)
 		return err
 	}
 	return nil
