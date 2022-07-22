@@ -366,6 +366,7 @@ func (node *ChordNode) Notify(newPre string, _ *string) error {
 	pre := node.getPredecessor()
 	if pre.Addr == "" || contains(Hash(newPre), pre.ID, node.ID) {
 		logrus.Infof("<Notify> [%s] set predecessor to [%s]\n", node.name(), newPre)
+		node.setPredecessor(newPre)
 		newPreData := make(map[string]string)
 		err := RemoteCall(newPre, "ChordNode.GetData", "", &newPreData)
 		if err != nil {
@@ -373,7 +374,6 @@ func (node *ChordNode) Notify(newPre string, _ *string) error {
 			return err
 		}
 		node.addToBackup(newPreData) // TODO: remove from node.data?
-		node.setPredecessor(newPre)
 	}
 	return nil
 }
