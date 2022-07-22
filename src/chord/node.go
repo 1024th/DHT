@@ -329,10 +329,7 @@ func (node *ChordNode) stabilize() {
 	}
 	node.successorLock.Unlock()
 	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.name(), suc.name())
-	err = RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
-	if err != nil {
-		logrus.Errorf("<stabilize> [%s] notify [%s] err: %v\n", node.name(), suc.name(), err)
-	}
+	RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
 }
 
 func (node *ChordNode) Stabilize(_ string, _ *string) error {
@@ -451,6 +448,10 @@ func (node *ChordNode) clear() {
 // "Quit" will not be called before "Create" or "Join".
 // For a dhtNode, "Quit" may be called for many times.
 // For a quited node, call "Quit" again should have no effect.
+	if !node.isOnline() {
+		logrus.Warnf("<Quit> [%s] offline\n", node.name())
+		return
+	}
 func (node *ChordNode) Quit() {
 	logrus.Infof("<Quit> [%s]\n", node.Addr)
 	node.setOffline()
