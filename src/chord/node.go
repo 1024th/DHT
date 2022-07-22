@@ -374,7 +374,7 @@ func (node *ChordNode) GetData(_ string, res *map[string]string) error {
 func (node *ChordNode) Notify(newPre string, _ *string) error {
 	logrus.Infof("<Notify> [%s] newPre [%s]\n", node.name(), getPortFromIP(newPre))
 	pre := node.getPredecessor()
-	if pre.Addr == "" || contains(Hash(newPre), pre.ID, node.ID) {
+	if node.Ping(newPre) && (pre.Addr == "" || contains(Hash(newPre), pre.ID, node.ID)) {
 		logrus.Infof("<Notify> [%s] set predecessor to [%s]\n", node.name(), newPre)
 		node.setPredecessor(newPre)
 		newPreData := make(map[string]string)
