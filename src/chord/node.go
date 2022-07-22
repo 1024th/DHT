@@ -203,6 +203,7 @@ func (node *ChordNode) TransferData(preAddr string, preData *map[string]string) 
 		return err
 	}
 	// node.Notify(preAddr, nil)
+	node.setPredecessor(preAddr)
 	return nil
 }
 
