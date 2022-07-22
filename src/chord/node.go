@@ -541,14 +541,14 @@ func (node *ChordNode) getOnlineSuccessor() NodeRecord {
 		node.successorLock.RUnlock()
 		if suc.Addr != "" && node.Ping(suc.Addr) {
 			// logrus.Infof("<getOnlineSuccessor> find [%s]'s successor: [%s]\n", node.name(), node.successorList[i].Addr)
-			if i > 0 {
-				node.successorLock.Lock()
-				for j := i; j < successorListLen; j++ {
-					node.successorList[j-i] = node.successorList[j]
-				}
-				node.successorLock.Unlock()
-				RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
-			}
+			// if i > 0 {
+			// 	node.successorLock.Lock()
+			// 	for j := i; j < successorListLen; j++ {
+			// 		node.successorList[j-i] = node.successorList[j]
+			// 	}
+			// 	node.successorLock.Unlock()
+			// 	RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
+			// }
 			return suc
 		}
 	}
