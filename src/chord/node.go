@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"net"
 	"net/rpc"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -13,12 +14,12 @@ import (
 )
 
 const (
-	successorListLen = 5
+	successorListLen = 20
 )
 
 const (
 	checkPredecessorInterval = 200 * time.Millisecond
-	stabilizeInterval        = 150 * time.Millisecond
+	stabilizeInterval        = 200 * time.Millisecond
 	fixFingerInterval        = 200 * time.Millisecond
 	pingTimeout              = 300 * time.Millisecond
 )
@@ -91,8 +92,8 @@ func (node *ChordNode) PrintSelf() {
 
 func (node *ChordNode) Serve() {
 	logrus.Infof("<Serve> [%s] start serving...\n", node.name())
-	count := 0
-	var countLock sync.Mutex
+	// count := 0
+	// var countLock sync.Mutex
 	// defer func() {
 	// 	node.listener.Close()
 	// }()
@@ -108,15 +109,15 @@ func (node *ChordNode) Serve() {
 			logrus.Errorf("<Serve> [%s], listener accept error, stop serving.", node.Addr)
 			return
 		}
-		countLock.Lock()
-		count++
-		countLock.Unlock()
+		// countLock.Lock()
+		// count++
+		// countLock.Unlock()
 		// logrus.Infof("<Serve> [%s] start connect num: %d\n", node.name(), count)
 		go func() {
 			node.server.ServeConn(conn)
-			countLock.Lock()
-			count--
-			countLock.Unlock()
+			// countLock.Lock()
+			// count--
+			// countLock.Unlock()
 			// logrus.Infof("<Serve> [%s] end connect num: %d\n", node.name(), count)
 		}()
 		// go node.server.ServeConn(conn)
@@ -214,9 +215,10 @@ func (node *ChordNode) Join(addr string) bool {
 	// 	return false
 	// }
 	var suc NodeRecord
-	err := RemoteCall(addr, "ChordNode.FindSuccessor", Hash(addr), &suc.Addr)
+	err := RemoteCall(addr, "ChordNode.FindSuccessor", node.ID, &suc.Addr)
 	if err != nil {
 		logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.name(), addr, err)
+		return false
 	}
 	suc.ID = Hash(suc.Addr)
 	var tmpList [successorListLen]NodeRecord
@@ -496,25 +498,24 @@ func (node *ChordNode) Ping(addr string) bool {
 	}
 	for i := 0; i < 3; i++ {
 		// conn, err := net.DialTimeout("tcp", addr, timeout)
-		ch := make(chan bool)
+		ch := make(chan error)
 		go func() {
 			conn, err := net.Dial("tcp", addr)
 			if conn != nil {
 				conn.Close()
 			}
-			if err == nil {
-				ch <- true
-			} else {
-				logrus.Warnf("<Ping> [%s] ping [%s] err: %v\n", node.name(), getPortFromIP(addr), err)
-				ch <- false
-			}
+			ch <- err
 		}()
 		select {
-		case ok := <-ch:
-			if ok {
-				return ok
+		case err := <-ch:
+			if err == nil {
+				return true
+			} else {
+				pc, _, _, _ := runtime.Caller(1)
+				details := runtime.FuncForPC(pc)
+				logrus.Warnf("<Ping> [%s] ping [%s] err: %v called by %s\n", node.name(), getPortFromIP(addr), err, details.Name())
+				continue
 			}
-			continue
 		case <-time.After(pingTimeout):
 			continue
 		}
