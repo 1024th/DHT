@@ -16,8 +16,9 @@ const (
 	successorListLen = 5
 )
 
-var (
-	maintainInterval = 100 * time.Millisecond
+const (
+	maintainInterval = 200 * time.Millisecond
+	timeout          = 250 * time.Millisecond
 )
 
 type NodeRecord struct {
@@ -95,6 +96,7 @@ func (node *ChordNode) Serve() {
 	// }()
 	for node.isOnline() {
 		conn, err := node.listener.Accept()
+		// logrus.Infof("<Serve> [%s] accept\n", node.name())
 		if !node.isOnline() {
 			logrus.Warnf("<Serve> [%s] offline, stop serving...\n", node.Addr)
 			break
@@ -120,11 +122,11 @@ func (node *ChordNode) Serve() {
 	logrus.Warnf("<Serve> [%s] stop serving.\n", node.Addr)
 }
 
-// func (node *ChordNode) Hello(_ string, reply *string) error {
-// 	*reply = fmt.Sprintf("\"Hello!\", said by node [%s].\n", node.addr)
-// 	logrus.Infoln(*reply)
-// 	return nil
-// }
+func (node *ChordNode) Hello(_ string, reply *string) error {
+	*reply = fmt.Sprintf("\"Hello!\", said by node [%s].\n", node.name())
+	logrus.Infoln(*reply)
+	return nil
+}
 
 // "Run" is called after calling "NewNode".
 func (node *ChordNode) Run() {
@@ -329,7 +331,10 @@ func (node *ChordNode) stabilize() {
 	}
 	node.successorLock.Unlock()
 	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.name(), suc.name())
-	RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
+	err = RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
+	if err != nil {
+		logrus.Errorf("<stabilize> [%s] notify [%s] err: %v\n", node.name(), suc.name(), err)
+	}
 }
 
 func (node *ChordNode) Stabilize(_ string, _ *string) error {
@@ -400,7 +405,7 @@ func (node *ChordNode) backupDataToSuccessor() {
 
 func (node *ChordNode) checkPredecessor() {
 	pre := node.getPredecessor()
-	logrus.Infof("<checkPredecessor> [%s] pre [%s] ping %v\n", node.name(), pre.name(), node.Ping(pre.Addr))
+	// logrus.Infof("<checkPredecessor> [%s] pre [%s] ping %v\n", node.name(), pre.name(), node.Ping(pre.Addr))
 	if pre.Addr != "" && !node.Ping(pre.Addr) {
 		logrus.Warnf("<checkPredecessor> [%s] fail\n", node.Addr)
 		node.setPredecessor("")
@@ -448,11 +453,11 @@ func (node *ChordNode) clear() {
 // "Quit" will not be called before "Create" or "Join".
 // For a dhtNode, "Quit" may be called for many times.
 // For a quited node, call "Quit" again should have no effect.
+func (node *ChordNode) Quit() {
 	if !node.isOnline() {
 		logrus.Warnf("<Quit> [%s] offline\n", node.name())
 		return
 	}
-func (node *ChordNode) Quit() {
 	logrus.Infof("<Quit> [%s]\n", node.Addr)
 	node.setOffline()
 	node.listener.Close()
@@ -466,6 +471,7 @@ func (node *ChordNode) Quit() {
 		logrus.Errorf("<Quit> [%s] call [%s] Stabilize err: %v\n", node.name(), node.predecessor.name(), err)
 	}
 	node.clear()
+	// time.Sleep(200 * time.Millisecond)
 }
 
 // Chord offers a way of "normal" quitting.
@@ -511,13 +517,13 @@ func (node *ChordNode) Ping(addr string) bool {
 }
 
 func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {
-	logrus.Infof("<FindSuccessor> [%s] find %s\n", node.name(), id.String())
+	// logrus.Infof("<FindSuccessor> [%s] find %s\n", node.name(), id.String())
 	suc := node.getOnlineSuccessor()
 	if suc.Addr == "" {
 		return fmt.Errorf("Cannot find successor of [%s]", node.Addr)
 	}
-	logrus.Infof("<FindSuccessor> [%s] online successor: [%s]%s\n", node.name(), suc.name(), suc.ID.String())
-	logrus.Infof("<FindSuccessor> [%s] target: %s self: %s suc: %s contains:%v\n", node.name(), id, node.ID, suc.ID.String(), contains(id, node.ID, suc.ID))
+	logrus.Infof("<FindSuccessor> [%s] online successor: [%s]\n", node.name(), suc.name())
+	// logrus.Infof("<FindSuccessor> [%s] target: %s self: %s suc: %s contains:%v\n", node.name(), id, node.ID, suc.ID.String(), contains(id, node.ID, suc.ID))
 
 	if id.Cmp(suc.ID) == 0 || contains(id, node.ID, suc.ID) {
 		*result = suc.Addr
@@ -534,7 +540,7 @@ func (node *ChordNode) getOnlineSuccessor() NodeRecord {
 		suc := node.successorList[i]
 		node.successorLock.RUnlock()
 		if suc.Addr != "" && node.Ping(suc.Addr) {
-			logrus.Infof("<getOnlineSuccessor> find [%s]'s successor: [%s]\n", node.name(), node.successorList[i].Addr)
+			// logrus.Infof("<getOnlineSuccessor> find [%s]'s successor: [%s]\n", node.name(), node.successorList[i].Addr)
 			if i > 0 {
 				node.successorLock.Lock()
 				for j := i; j < successorListLen; j++ {

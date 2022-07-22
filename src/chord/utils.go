@@ -5,7 +5,8 @@ import (
 	"math/big"
 	"net"
 	"net/rpc"
-	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Returns (begin < target && target < end).
@@ -42,10 +43,6 @@ func Hash(s string) *big.Int {
 func hashAdd(x *big.Int, y int) *big.Int {
 	return new(big.Int).And(new(big.Int).Add(x, big.NewInt(int64(y))), hashMask)
 }
-
-const (
-	timeout time.Duration = 200 * time.Millisecond
-)
 
 func GetClient(addr string) (*rpc.Client, error) {
 	var err error
