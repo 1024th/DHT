@@ -468,27 +468,39 @@ func (node *ChordNode) ForceQuit() {}
 
 // Check whether the node represented by the IP address is in the network.
 func (node *ChordNode) Ping(addr string) bool {
-	// pc, _, _, ok := runtime.Caller(1)
-	// details := runtime.FuncForPC(pc)
-	// if ok && details != nil {
-	// 	logrus.Infof("<Ping> called from <%s>\n", details.Name())
-	// }
 	if addr == "" {
-		logrus.Errorf("<Ping> [%s] ping [%s] err: empty address\n", node.name(), addr)
+		logrus.Warnf("<Ping> [%s] ping [%s] err: empty address\n", node.name(), getPortFromIP(addr))
 		return false
 	}
 	if addr == node.Addr {
 		return true
 	}
-	client, err := GetClient(addr)
-	if err != nil {
-		logrus.Errorf("<Ping> [%s] ping [%s] err: %v\n", node.name(), addr, err)
-		return false
+	for i := 0; i < 3; i++ {
+		// conn, err := net.DialTimeout("tcp", addr, timeout)
+		ch := make(chan bool)
+		go func() {
+			conn, err := net.Dial("tcp", addr)
+			if conn != nil {
+				conn.Close()
+			}
+			if err == nil {
+				ch <- true
+			} else {
+				logrus.Warnf("<Ping> [%s] ping [%s] err: %v\n", node.name(), addr, err)
+				ch <- false
+			}
+		}()
+		select {
+		case ok := <-ch:
+			if ok {
+				return ok
+			}
+			continue
+		case <-time.After(timeout):
+			continue
+		}
 	}
-	if client != nil {
-		client.Close()
-	}
-	return true
+	return false
 }
 
 func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {

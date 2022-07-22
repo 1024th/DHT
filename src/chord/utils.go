@@ -48,12 +48,18 @@ const (
 )
 
 func GetClient(addr string) (*rpc.Client, error) {
-	conn, err := net.DialTimeout("tcp", addr, timeout)
-	if err != nil {
-		return nil, err
+	var err error
+	// for i := 0; i < 3; i++ {
+	var conn net.Conn
+	// conn, err = net.DialTimeout("tcp", addr, timeout)
+	conn, err = net.Dial("tcp", addr)
+	if err == nil {
+		client := rpc.NewClient(conn)
+		return client, err
 	}
-	client := rpc.NewClient(conn)
-	return client, err
+	// }
+	logrus.Errorf("<GetClient> get [%s] err: %v\n", getPortFromIP(addr), err)
+	return nil, err
 }
 
 func RemoteCall(addr string, serviceMethod string, args interface{}, reply interface{}) error {
