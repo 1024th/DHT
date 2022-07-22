@@ -41,7 +41,7 @@ type ChordNode struct {
 	successorLock   sync.RWMutex
 	finger          [hashLength]NodeRecord
 	fingerLock      sync.RWMutex
-	curFinger       int
+	curFinger       uint
 	data            map[string]string
 	dataLock        sync.RWMutex
 	backup          map[string]string
@@ -261,7 +261,7 @@ func (node *ChordNode) Join(addr string) bool {
 }
 
 func (node *ChordNode) fixFinger() {
-	t := hashAdd(node.ID, 1<<node.curFinger)
+	t := hashCalc(node.ID, node.curFinger)
 	var res string
 	err := node.FindSuccessor(t, &res)
 	if err != nil {

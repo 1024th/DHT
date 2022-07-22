@@ -40,8 +40,10 @@ func Hash(s string) *big.Int {
 	return ret
 }
 
-func hashAdd(x *big.Int, y int) *big.Int {
-	return new(big.Int).And(new(big.Int).Add(x, big.NewInt(int64(y))), hashMask)
+// Returns (x + (2**y)) % (2**M), which is the value of finger[y].start of node x.
+// M is the hashLength.
+func hashCalc(x *big.Int, y uint) *big.Int {
+	return new(big.Int).And(new(big.Int).Add(x, new(big.Int).Lsh(big.NewInt(1), y)), hashMask)
 }
 
 func GetClient(addr string) (*rpc.Client, error) {
