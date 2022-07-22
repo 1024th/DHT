@@ -329,7 +329,9 @@ func (node *ChordNode) stabilize() {
 	node.successorLock.Lock()
 	node.successorList[0] = suc
 	for i := 1; i < successorListLen; i++ {
-		node.successorList[i] = tmpList[i-1]
+		if node.Ping(tmpList[i-1].Addr) {
+			node.successorList[i] = tmpList[i-1]
+		}
 	}
 	node.successorLock.Unlock()
 	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.name(), suc.name())
