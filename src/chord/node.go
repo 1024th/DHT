@@ -17,8 +17,10 @@ const (
 )
 
 const (
-	maintainInterval = 200 * time.Millisecond
-	timeout          = 250 * time.Millisecond
+	checkPredecessorInterval = 200 * time.Millisecond
+	stabilizeInterval        = 150 * time.Millisecond
+	fixFingerInterval        = 200 * time.Millisecond
+	pingTimeout              = 300 * time.Millisecond
 )
 
 type NodeRecord struct {
@@ -423,19 +425,19 @@ func (node *ChordNode) maintain() {
 	go func() {
 		for node.online {
 			node.fixFinger()
-			time.Sleep(maintainInterval)
+			time.Sleep(fixFingerInterval)
 		}
 	}()
 	go func() {
 		for node.online {
 			node.stabilize()
-			time.Sleep(maintainInterval)
+			time.Sleep(stabilizeInterval)
 		}
 	}()
 	go func() {
 		for node.online {
 			node.checkPredecessor()
-			time.Sleep(maintainInterval)
+			time.Sleep(checkPredecessorInterval)
 		}
 	}()
 }
@@ -509,7 +511,7 @@ func (node *ChordNode) Ping(addr string) bool {
 				return ok
 			}
 			continue
-		case <-time.After(timeout):
+		case <-time.After(pingTimeout):
 			continue
 		}
 	}
