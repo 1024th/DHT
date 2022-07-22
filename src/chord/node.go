@@ -208,7 +208,7 @@ func (node *ChordNode) TransferData(preAddr string, preData *map[string]string) 
 
 // Join an existing network. Return "true" if join succeeded and "false" if not.
 func (node *ChordNode) Join(addr string) bool {
-	// if node.online {
+	// if node.isOnline() {
 	// 	logrus.Errorf("<Join> [%s] already joined")
 	// 	return false
 	// }
@@ -425,19 +425,19 @@ func (node *ChordNode) CheckPredecessor(_ string, _ *string) error {
 
 func (node *ChordNode) maintain() {
 	go func() {
-		for node.online {
+		for node.isOnline() {
 			node.fixFinger()
 			time.Sleep(fixFingerInterval)
 		}
 	}()
 	go func() {
-		for node.online {
+		for node.isOnline() {
 			node.stabilize()
 			time.Sleep(stabilizeInterval)
 		}
 	}()
 	go func() {
-		for node.online {
+		for node.isOnline() {
 			node.checkPredecessor()
 			time.Sleep(checkPredecessorInterval)
 		}
@@ -596,7 +596,7 @@ func (node *ChordNode) PutInBackup(pair Pair, _ *string) error {
 
 // Put a key-value pair into the network (if KEY is already in the network, cover it)
 func (node *ChordNode) Put(key string, value string) bool {
-	if !node.online {
+	if !node.isOnline() {
 		logrus.Errorf("<Put> [%s] offline\n", node.Addr)
 		return false
 	}
@@ -629,7 +629,7 @@ func (node *ChordNode) GetValue(key string, value *string) error {
 // Get a key-value pair from the network.
 // Return "true" and the value if success, "false" otherwise.
 func (node *ChordNode) Get(key string) (bool, string) {
-	if !node.online {
+	if !node.isOnline() {
 		logrus.Errorf("<Get> [%s] offline\n", node.Addr)
 		return false, ""
 	}
@@ -679,7 +679,7 @@ func (node *ChordNode) DeleteInBackup(key string, _ *string) error {
 // Remove the key-value pair represented by KEY from the network.
 // Return "true" if remove successfully, "false" otherwise.
 func (node *ChordNode) Delete(key string) bool {
-	if !node.online {
+	if !node.isOnline() {
 		logrus.Errorf("<Delete> [%s] offline\n", node.Addr)
 		return false
 	}
