@@ -319,6 +319,9 @@ func (node *ChordNode) stabilize() {
 		logrus.Infof("<stabilize> [%s] GetSuccessorList of [%s] err: %v\n", node.name(), suc.name(), err)
 	}
 	logrus.Infof("<stabilize> [%s] suc [%s]'s sucList: %s\n", node.name(), suc.name(), sucListToString(&tmpList))
+	node.fingerLock.Lock()
+	node.finger[0] = suc
+	node.fingerLock.Unlock()
 	node.successorLock.Lock()
 	node.successorList[0] = suc
 	for i := 1; i < successorListLen; i++ {
@@ -326,7 +329,10 @@ func (node *ChordNode) stabilize() {
 	}
 	node.successorLock.Unlock()
 	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.name(), suc.name())
-	RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
+	err = RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
+	if err != nil {
+		logrus.Errorf("<stabilize> [%s] notify [%s] err: %v\n", node.name(), suc.name(), err)
+	}
 }
 
 func (node *ChordNode) Stabilize(_ string, _ *string) error {
