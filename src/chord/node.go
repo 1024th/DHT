@@ -468,12 +468,13 @@ func (node *ChordNode) Quit() {
 	if err != nil {
 		logrus.Errorf("<Quit> [%s] call [%s] CheckPredecessor err: %v\n", node.name(), suc.name(), err)
 	}
-	err = RemoteCall(node.predecessor.Addr, "ChordNode.Stabilize", "", nil)
+	pre := node.getPredecessor()
+	err = RemoteCall(pre.Addr, "ChordNode.Stabilize", "", nil)
 	if err != nil {
-		logrus.Errorf("<Quit> [%s] call [%s] Stabilize err: %v\n", node.name(), node.predecessor.name(), err)
+		logrus.Errorf("<Quit> [%s] call [%s] Stabilize err: %v\n", node.name(), pre.name(), err)
 	}
 	node.clear()
-	// time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 }
 
 // Chord offers a way of "normal" quitting.
@@ -695,7 +696,7 @@ func (node *ChordNode) Delete(key string) bool {
 	return true
 }
 
-func (node *NodeRecord) name() string {
+func (node NodeRecord) name() string {
 	return getPortFromIP(node.Addr)
 }
 
