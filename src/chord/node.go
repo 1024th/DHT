@@ -523,6 +523,9 @@ func (node *ChordNode) Ping(addr string) bool {
 }
 
 func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {
+	if !node.isOnline() {
+		return fmt.Errorf("<FindSuccessor> [%s] offline\n", node.name())
+	}
 	// logrus.Infof("<FindSuccessor> [%s] find %s\n", node.name(), id.String())
 	suc := node.getOnlineSuccessor()
 	if suc.Addr == "" {
