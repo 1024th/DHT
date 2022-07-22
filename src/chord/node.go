@@ -693,8 +693,7 @@ func (node *ChordNode) Delete(key string) bool {
 		logrus.Errorf("<Delete> [%s] find successor of key %v err: %v\n", node.name(), key, err)
 		return false
 	}
-	var value string
-	err = RemoteCall(target, "ChordNode.GetValue", key, &value)
+	err = RemoteCall(target, "ChordNode.DeleteValue", key, nil)
 	if err != nil {
 		logrus.Errorf("<Delete> delete from [%s] err: %v\n", target, err)
 		return false
