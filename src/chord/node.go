@@ -486,7 +486,16 @@ func (node *ChordNode) Quit() {
 // Chord offers a way of "normal" quitting.
 // For "force quit", the node quit the network without informing other nodes.
 // "ForceQuit" will be checked by TA manually.
-func (node *ChordNode) ForceQuit() {}
+func (node *ChordNode) ForceQuit() {
+	if !node.isOnline() {
+		logrus.Warnf("<ForceQuit> [%s] offline\n", node.name())
+		return
+	}
+	logrus.Infof("<ForceQuit> [%s]\n", node.Addr)
+	node.setOffline()
+	node.listener.Close()
+	node.clear()
+}
 
 // Check whether the node represented by the IP address is in the network.
 func (node *ChordNode) Ping(addr string) bool {
