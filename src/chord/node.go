@@ -385,7 +385,8 @@ func (node *ChordNode) Notify(newPre string, _ *string) error {
 			logrus.Errorf("<Notify> [%s] get data from [%s] err: %v\n", node.name(), newPre, err)
 			return err
 		}
-		node.addToBackup(newPreData) // TODO: remove from node.data?
+		node.backup = newPreData
+		// node.addToBackup(newPreData) // TODO: remove from node.data?
 	}
 	return nil
 }
