@@ -215,7 +215,7 @@ func (node *ChordNode) Join(addr string) bool {
 	// 	return false
 	// }
 	var suc NodeRecord
-	err := RemoteCall(addr, "ChordNode.FindSuccessor", node.ID, &suc.Addr)
+	err := RemoteCall(addr, "ChordNode.FindSuccessor", FindSucInput{node.ID, 0}, &suc.Addr)
 	if err != nil {
 		logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.name(), addr, err)
 		return false
@@ -265,7 +265,7 @@ func (node *ChordNode) Join(addr string) bool {
 func (node *ChordNode) fixFinger() {
 	t := hashCalc(node.ID, node.curFinger)
 	var res string
-	err := node.FindSuccessor(t, &res)
+	err := node.FindSuccessor(FindSucInput{t, 0}, &res)
 	if err != nil {
 		logrus.Errorf("<fixFinger> [%s] Find Successor of %v err: %v\n", node.name(), t, err)
 		return
@@ -544,7 +544,13 @@ func (node *ChordNode) Ping(addr string) bool {
 	return false
 }
 
-func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {
+type FindSucInput struct {
+	ID    *big.Int
+	Depth int
+}
+
+func (node *ChordNode) FindSuccessor(input FindSucInput, result *string) error {
+	id := input.ID
 	if !node.isOnline() {
 		return fmt.Errorf("<FindSuccessor> [%s] offline\n", node.name())
 	}
@@ -553,15 +559,16 @@ func (node *ChordNode) FindSuccessor(id *big.Int, result *string) error {
 	if suc.Addr == "" {
 		return fmt.Errorf("Cannot find successor of [%s]", node.Addr)
 	}
-	logrus.Infof("<FindSuccessor> [%s] online successor: [%s]\n", node.name(), suc.name())
+	logrus.Infof("<FindSuccessor> [%s] depth: %d, online successor: [%s]\n", node.name(), input.Depth, suc.name())
 	// logrus.Infof("<FindSuccessor> [%s] target: %s self: %s suc: %s contains:%v\n", node.name(), id, node.ID, suc.ID.String(), contains(id, node.ID, suc.ID))
 
 	if id.Cmp(suc.ID) == 0 || contains(id, node.ID, suc.ID) {
 		*result = suc.Addr
+		logrus.Infof("<FindSuccessor> [%s] depth: %d found successor [%s] is target, id: %s self: %s suc: %s\n", node.name(), input.Depth, suc.name(), id, node.ID, suc.ID)
 		return nil
 	}
 	p := node.closestPrecedingFinger(id)
-	return RemoteCall(p, "ChordNode.FindSuccessor", id, result)
+	return RemoteCall(p, "ChordNode.FindSuccessor", FindSucInput{id, input.Depth + 1}, result)
 }
 
 func (node *ChordNode) getOnlineSuccessor() NodeRecord {
@@ -627,7 +634,7 @@ func (node *ChordNode) Put(key string, value string) bool {
 		return false
 	}
 	var target string
-	err := node.FindSuccessor(Hash(key), &target)
+	err := node.FindSuccessor(FindSucInput{Hash(key), 0}, &target)
 	if err != nil {
 		logrus.Errorf("<Put> [%s] find successor of key %v err: %v\n", node.name(), key, err)
 		return false
@@ -660,7 +667,7 @@ func (node *ChordNode) Get(key string) (bool, string) {
 		return false, ""
 	}
 	var target string
-	err := node.FindSuccessor(Hash(key), &target)
+	err := node.FindSuccessor(FindSucInput{Hash(key), 0}, &target)
 	if err != nil {
 		logrus.Errorf("<Get> [%s] find successor of key %v err: %v\n", node.name(), key, err)
 		return false, ""
@@ -710,7 +717,7 @@ func (node *ChordNode) Delete(key string) bool {
 		return false
 	}
 	var target string
-	err := node.FindSuccessor(Hash(key), &target)
+	err := node.FindSuccessor(FindSucInput{Hash(key), 0}, &target)
 	if err != nil {
 		logrus.Errorf("<Delete> [%s] find successor of key %v err: %v\n", node.name(), key, err)
 		return false
