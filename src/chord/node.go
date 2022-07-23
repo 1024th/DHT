@@ -506,6 +506,7 @@ func (node *ChordNode) Ping(addr string) bool {
 	for i := 0; i < 3; i++ {
 		conn, err := net.DialTimeout("tcp", addr, pingTimeout)
 		if err == nil {
+			conn.Close()
 			return true
 		} else {
 			pc, _, _, _ := runtime.Caller(1)
