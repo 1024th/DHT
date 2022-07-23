@@ -270,15 +270,12 @@ func (node *ChordNode) fixFinger() {
 		logrus.Errorf("<fixFinger> [%s] Find Successor of %v err: %v\n", node.name(), t, err)
 		return
 	}
-	node.fingerLock.RLock()
-	needUpdate := node.finger[node.curFinger].Addr != res
-	node.fingerLock.RUnlock()
-	if needUpdate {
-		node.fingerLock.Lock()
+	node.fingerLock.Lock()
+	if node.finger[node.curFinger].Addr != res {
 		node.finger[node.curFinger].Addr = res
 		node.finger[node.curFinger].ID = Hash(res)
-		node.fingerLock.Unlock()
 	}
+	node.fingerLock.Unlock()
 	node.curFinger = (node.curFinger + 1) % hashLength
 }
 
@@ -596,11 +593,21 @@ func (node *ChordNode) getOnlineSuccessor() NodeRecord {
 
 func (node *ChordNode) closestPrecedingFinger(id *big.Int) (addr string) {
 	for i := hashLength - 1; i >= 0; i-- {
-		if node.finger[i].Addr != "" && !node.Ping(node.finger[i].Addr) {
+		node.fingerLock.RLock()
+		fin := node.finger[i]
+		node.fingerLock.RUnlock()
+		if fin.Addr == "" {
 			continue
 		}
-		if node.finger[i].ID != nil && contains(node.finger[i].ID, node.ID, id) {
-			return node.finger[i].Addr
+		if !node.Ping(fin.Addr) {
+			node.fingerLock.Lock()
+			node.finger[i].Addr = ""
+			node.finger[i].ID = nil
+			node.fingerLock.Unlock()
+			continue
+		}
+		if contains(fin.ID, node.ID, id) {
+			return fin.Addr
 		}
 	}
 
