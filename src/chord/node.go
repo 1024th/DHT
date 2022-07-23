@@ -14,14 +14,14 @@ import (
 )
 
 const (
-	successorListLen = 20
+	successorListLen = 10
 )
 
 const (
 	checkPredecessorInterval = 200 * time.Millisecond
 	stabilizeInterval        = 200 * time.Millisecond
 	fixFingerInterval        = 200 * time.Millisecond
-	pingTimeout              = 300 * time.Millisecond
+	pingTimeout              = 500 * time.Millisecond
 )
 
 type NodeRecord struct {
@@ -187,6 +187,7 @@ func (node *ChordNode) TransferData(preAddr string, preData *map[string]string) 
 	preID := Hash(preAddr)
 	node.dataLock.Lock()
 	node.backupLock.Lock()
+	node.backup = make(map[string]string)
 	for k, v := range node.data {
 		kID := Hash(k)
 		if kID.Cmp(node.ID) != 0 && !contains(kID, preID, node.ID) {
@@ -214,6 +215,7 @@ func (node *ChordNode) Join(addr string) bool {
 	// 	logrus.Errorf("<Join> [%s] already joined")
 	// 	return false
 	// }
+	logrus.Infof("<Join> [%s] join [%s]\n", node.name(), getPortFromIP(addr))
 	var suc NodeRecord
 	err := RemoteCall(addr, "ChordNode.FindSuccessor", FindSucInput{node.ID, 0}, &suc.Addr)
 	if err != nil {
@@ -258,7 +260,7 @@ func (node *ChordNode) Join(addr string) bool {
 	node.setOnline()
 	node.maintain()
 	// node.stabilize()
-	// time.Sleep(10 * time.Millisecond)
+	// time.Sleep(200 * time.Millisecond)
 	return true
 }
 
@@ -314,13 +316,14 @@ func (node *ChordNode) stabilize() {
 	RemoteCall(suc.Addr, "ChordNode.GetPredecessor", "", &newSuc.Addr)
 	newSuc.ID = Hash(newSuc.Addr)
 	logrus.Infof("<stabilize> newSucID %v node.ID %v suc.ID %v\n", newSuc, node.ID, suc.ID)
-	if newSuc.Addr != "" && node.Ping(newSuc.Addr) && contains(newSuc.ID, node.ID, suc.ID) {
+	if newSuc.Addr != "" && contains(newSuc.ID, node.ID, suc.ID) {
 		suc = newSuc
 	}
 	var tmpList [successorListLen]NodeRecord
 	err := RemoteCall(suc.Addr, "ChordNode.GetSuccessorList", "", &tmpList)
 	if err != nil {
-		logrus.Infof("<stabilize> [%s] GetSuccessorList of [%s] err: %v\n", node.name(), suc.name(), err)
+		logrus.Errorf("<stabilize> [%s] GetSuccessorList of [%s] err: %v\n", node.name(), suc.name(), err)
+		return
 	}
 	logrus.Infof("<stabilize> [%s] suc [%s]'s sucList: %s\n", node.name(), suc.name(), sucListToString(&tmpList))
 	node.fingerLock.Lock()
@@ -329,9 +332,7 @@ func (node *ChordNode) stabilize() {
 	node.successorLock.Lock()
 	node.successorList[0] = suc
 	for i := 1; i < successorListLen; i++ {
-		if node.Ping(tmpList[i-1].Addr) {
-			node.successorList[i] = tmpList[i-1]
-		}
+		node.successorList[i] = tmpList[i-1]
 	}
 	node.successorLock.Unlock()
 	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.name(), suc.name())
@@ -477,7 +478,7 @@ func (node *ChordNode) Quit() {
 		logrus.Errorf("<Quit> [%s] call [%s] Stabilize err: %v\n", node.name(), pre.name(), err)
 	}
 	node.clear()
-	time.Sleep(300 * time.Millisecond)
+	// time.Sleep(300 * time.Millisecond)
 }
 
 // Chord offers a way of "normal" quitting.

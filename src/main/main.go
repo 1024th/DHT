@@ -2,9 +2,13 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -19,15 +23,33 @@ func init() {
 	flag.Usage = usage
 	flag.Parse()
 
-	if help || (testName != "basic" && testName != "advance" && testName != "all") {
+	if help || (testName != "basic" && testName != "advance" && testName != "all" && testName != "mytest") {
 		flag.Usage()
 		os.Exit(0)
 	}
 
-	rand.Seed(time.Now().UnixNano())
+	seed := time.Now().UnixNano()
+	fmt.Printf("Seed: %v\n", seed)
+	rand.Seed(seed)
+}
+
+type myFormatter struct {
+	logrus.TextFormatter
+}
+
+func (f *myFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	// this whole mess of dealing with ansi color codes is required if you want the colored output otherwise you will lose colors in the log levels
+	return []byte(fmt.Sprintf("%s[%s] %s", strings.ToUpper(entry.Level.String()), entry.Time.Format(f.TimestampFormat), entry.Message)), nil
 }
 
 func main() {
+	f, _ := os.Create("/tmp/test.log")
+	logrus.SetOutput(f)
+	logrus.SetFormatter(&myFormatter{logrus.TextFormatter{
+		FullTimestamp:          true,
+		TimestampFormat:        "15:04:05.000000",
+		DisableLevelTruncation: true,
+	}})
 	_, _ = yellow.Println("Welcome to DHT-2022 Test Program!\n")
 
 	var basicFailRate float64
@@ -35,6 +57,8 @@ func main() {
 	var QASFailRate float64
 
 	switch testName {
+	// case "mytest":
+	// 	mytest()
 	case "all":
 		fallthrough
 	case "basic":

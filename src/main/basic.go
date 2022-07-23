@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func basicTest() (bool, int, int) {
@@ -43,6 +45,7 @@ func basicTest() (bool, int, int) {
 	nextJoinNode := 1
 	for t := 1; t <= basicTestRoundNum; t++ {
 		_, _ = cyan.Printf("Basic Test Round %d\n", t)
+		logrus.Infof("Basic Test Round %d\n", t)
 
 		/* Join. */
 		joinInfo := testInfo{
