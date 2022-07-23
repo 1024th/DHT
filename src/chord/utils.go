@@ -2,9 +2,10 @@ package chord
 
 import (
 	"crypto/sha1"
-	"fmt"
 	"math/big"
+	"net"
 	"net/rpc"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -48,40 +49,47 @@ func hashCalc(x *big.Int, y uint) *big.Int {
 }
 
 func GetClient(addr string) (*rpc.Client, error) {
-	var client *rpc.Client
+	// var client *rpc.Client
+	// var err error
+	// for i := 0; i < 5; i++ {
+	// 	// conn, err := net.DialTimeout("tcp", addr, timeout)
+	// 	ch := make(chan error)
+	// 	go func() {
+	// 		client, err = rpc.Dial("tcp", addr)
+	// 		ch <- err
+	// 	}()
+	// 	select {
+	// 	case <-ch:
+	// 		if err == nil {
+	// 			return client, nil
+	// 		} else {
+	// 			logrus.Errorf("<GetClient> get [%s] err: %v\n", getPortFromIP(addr), err)
+	// 			return nil, err
+	// 		}
+	// 	case <-time.After(500 * time.Millisecond):
+	// 		logrus.Warnf("<GetClient> get [%s] timeout\n", getPortFromIP(addr))
+	// 		err = fmt.Errorf("timeout")
+	// 		continue
+	// 	}
+	// }
+	// logrus.Errorf("<GetClient> get [%s] err: %v\n", getPortFromIP(addr), err)
+	// return nil, err
+	var conn net.Conn
 	var err error
 	for i := 0; i < 3; i++ {
-		// conn, err := net.DialTimeout("tcp", addr, timeout)
-		ch := make(chan error)
-		go func() {
-			client, err = rpc.Dial("tcp", addr)
-			ch <- err
-		}()
-		select {
-		case <-ch:
-			if err == nil {
-				return client, nil
-			} else {
-				logrus.Errorf("<GetClient> get [%s] err: %v\n", getPortFromIP(addr), err)
+		conn, err = net.DialTimeout("tcp", addr, 800*time.Millisecond)
+		if err == nil {
+			client := rpc.NewClient(conn)
+			return client, err
+		} else {
+			if strings.Contains(err.Error(), "refused") {
 				return nil, err
 			}
-		case <-time.After(500 * time.Millisecond):
-			logrus.Warnf("<GetClient> get [%s] timeout\n", getPortFromIP(addr))
-			err = fmt.Errorf("timeout")
-			continue
+			logrus.Errorf("<GetClient> dial [%s] err: %v\n", addr, err)
 		}
+		time.Sleep(1500 * time.Millisecond)
 	}
-	logrus.Errorf("<GetClient> get [%s] err: %v\n", getPortFromIP(addr), err)
 	return nil, err
-	// for i := 0; i < 3; i++ {
-	// conn, err = net.DialTimeout("tcp", addr, timeout)
-	// conn, err = net.Dial("tcp", addr)
-	// if err == nil {
-	// 	client := rpc.NewClient(conn)
-	// 	return client, err
-	// }
-	// }
-	// return nil, err
 }
 
 func RemoteCall(addr string, serviceMethod string, args interface{}, reply interface{}) error {

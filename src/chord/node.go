@@ -507,28 +507,39 @@ func (node *ChordNode) Ping(addr string) bool {
 		return true
 	}
 	for i := 0; i < 3; i++ {
-		// conn, err := net.DialTimeout("tcp", addr, timeout)
-		ch := make(chan error)
-		go func() {
-			conn, err := net.Dial("tcp", addr)
-			if conn != nil {
-				conn.Close()
+		conn, err := net.DialTimeout("tcp", addr, pingTimeout)
+		if err == nil {
+			return true
+		} else {
+			pc, _, _, _ := runtime.Caller(1)
+			details := runtime.FuncForPC(pc)
+			logrus.Warnf("<Ping> [%s] ping [%s] err: %v called by %s\n", node.name(), getPortFromIP(addr), err, details.Name())
+			if strings.Contains(err.Error(), "refused") {
+				return false
 			}
-			ch <- err
-		}()
-		select {
-		case err := <-ch:
-			if err == nil {
-				return true
-			} else {
-				pc, _, _, _ := runtime.Caller(1)
-				details := runtime.FuncForPC(pc)
-				logrus.Warnf("<Ping> [%s] ping [%s] err: %v called by %s\n", node.name(), getPortFromIP(addr), err, details.Name())
-				continue
-			}
-		case <-time.After(pingTimeout):
-			continue
+			time.Sleep(1500 * time.Millisecond)
 		}
+		// ch := make(chan error)
+		// go func() {
+		// 	conn, err := net.Dial("tcp", addr)
+		// 	if conn != nil {
+		// 		conn.Close()
+		// 	}
+		// 	ch <- err
+		// }()
+		// select {
+		// case err := <-ch:
+		// 	if err == nil {
+		// 		return true
+		// 	} else {
+		// 		pc, _, _, _ := runtime.Caller(1)
+		// 		details := runtime.FuncForPC(pc)
+		// 		logrus.Warnf("<Ping> [%s] ping [%s] err: %v called by %s\n", node.name(), getPortFromIP(addr), err, details.Name())
+		// 		continue
+		// 	}
+		// case <-time.After(pingTimeout):
+		// 	continue
+		// }
 	}
 	return false
 }
