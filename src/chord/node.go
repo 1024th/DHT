@@ -175,7 +175,10 @@ func (node *ChordNode) Join(addr string) bool {
 	}
 	suc.ID = Hash(suc.Addr)
 	var tmpList [successorListLen]NodeRecord
-	RemoteCall(suc.Addr, "RPCNode.GetSuccessorList", nil, &tmpList)
+	err = RemoteCall(suc.Addr, "RPCNode.GetSuccessorList", "", &tmpList)
+	if err != nil {
+		logrus.Errorf("<Join> [%s] call [%s].GetSuccessorList err: %s\n", node.name(), addr, err)
+	}
 	node.successorLock.Lock()
 	node.successorList[0] = suc
 	for i := 1; i < successorListLen; i++ {
