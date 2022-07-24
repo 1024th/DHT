@@ -1,13 +1,14 @@
 package chord
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"net"
-	"net/rpc"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -30,10 +31,8 @@ type NodeRecord struct {
 }
 
 type ChordNode struct {
-	server     *rpc.Server
-	listener   net.Listener
-	online     bool
-	onlineLock sync.RWMutex
+	server RPCServer
+	online atomic.Value
 
 	NodeRecord
 	predecessor     NodeRecord
@@ -55,30 +54,19 @@ type Pair struct {
 }
 
 func (node *ChordNode) isOnline() bool {
-	node.onlineLock.RLock()
-	result := node.online
-	node.onlineLock.RUnlock()
-	return result
+	return node.online.Load().(bool)
 }
 
-func (node *ChordNode) setOnline() {
-	node.onlineLock.Lock()
-	node.online = true
-	node.onlineLock.Unlock()
-}
-func (node *ChordNode) setOffline() {
-	node.onlineLock.Lock()
-	node.online = false
-	node.onlineLock.Unlock()
+func (node *ChordNode) setOnline(v bool) {
+	node.online.Store(v)
 }
 
 func (node *ChordNode) Initialize(addr string) {
-	node.online = false
+	node.online.Store(false)
 	node.Addr = addr
 	node.ID = Hash(addr)
 	node.clear()
-	node.server = rpc.NewServer()
-	node.server.Register(node)
+	node.server.Init(&RPCNode{node})
 }
 
 func (node *ChordNode) PrintSelf() {
@@ -90,41 +78,6 @@ func (node *ChordNode) PrintSelf() {
 	logrus.Info(info)
 }
 
-func (node *ChordNode) Serve() {
-	logrus.Infof("<Serve> [%s] start serving...\n", node.name())
-	// count := 0
-	// var countLock sync.Mutex
-	// defer func() {
-	// 	node.listener.Close()
-	// }()
-	for node.isOnline() {
-		conn, err := node.listener.Accept()
-		// logrus.Infof("<Serve> [%s] accept\n", node.name())
-		if !node.isOnline() {
-			logrus.Warnf("<Serve> [%s] offline, stop serving...\n", node.Addr)
-			break
-		}
-
-		if err != nil {
-			logrus.Errorf("<Serve> [%s], listener accept error, stop serving.", node.Addr)
-			return
-		}
-		// countLock.Lock()
-		// count++
-		// countLock.Unlock()
-		// logrus.Infof("<Serve> [%s] start connect num: %d\n", node.name(), count)
-		go func() {
-			node.server.ServeConn(conn)
-			// countLock.Lock()
-			// count--
-			// countLock.Unlock()
-			// logrus.Infof("<Serve> [%s] end connect num: %d\n", node.name(), count)
-		}()
-		// go node.server.ServeConn(conn)
-	}
-	logrus.Warnf("<Serve> [%s] stop serving.\n", node.Addr)
-}
-
 func (node *ChordNode) Hello(_ string, reply *string) error {
 	*reply = fmt.Sprintf("\"Hello!\", said by node [%s].\n", node.name())
 	logrus.Infoln(*reply)
@@ -134,13 +87,11 @@ func (node *ChordNode) Hello(_ string, reply *string) error {
 // "Run" is called after calling "NewNode".
 func (node *ChordNode) Run() {
 	// logrus.Tracef("<Run> [%s]\n", node.name())
-	node.setOnline()
-	var err error
-	node.listener, err = net.Listen("tcp", node.Addr)
+	node.setOnline(true)
+	err := node.server.StartServing("tcp", node.Addr)
 	if err != nil {
-		logrus.Errorf("<Run> [%s] listen err: %v\n", node.name(), err)
+		logrus.Errorf("<Run> [%s] start serving err: %v\n", node.name(), err)
 	}
-	go node.Serve()
 }
 
 /* "Create" and "Join" are called after calling "Run".
@@ -152,7 +103,7 @@ func (node *ChordNode) Create() {
 	for i := 0; i < hashLength; i++ {
 		node.finger[i] = NodeRecord{node.Addr, node.ID}
 	}
-	node.setOnline()
+	node.setOnline(true)
 	node.maintain()
 }
 
@@ -199,7 +150,7 @@ func (node *ChordNode) TransferData(preAddr string, preData *map[string]string) 
 	node.dataLock.Unlock()
 	node.backupLock.Unlock()
 	suc := node.getOnlineSuccessor()
-	err := RemoteCall(suc.Addr, "ChordNode.ShrinkBackup", *preData, nil)
+	err := RemoteCall(suc.Addr, "RPCNode.ShrinkBackup", *preData, nil)
 	if err != nil {
 		logrus.Errorf("<TransferData> [%s] pre [%s] err: %v\n", node.name(), preAddr, err)
 		return err
@@ -217,14 +168,14 @@ func (node *ChordNode) Join(addr string) bool {
 	// }
 	logrus.Infof("<Join> [%s] join [%s]\n", node.name(), getPortFromIP(addr))
 	var suc NodeRecord
-	err := RemoteCall(addr, "ChordNode.FindSuccessor", FindSucInput{node.ID, 0}, &suc.Addr)
+	err := RemoteCall(addr, "RPCNode.FindSuccessor", FindSucInput{node.ID, 0}, &suc.Addr)
 	if err != nil {
 		logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.name(), addr, err)
 		return false
 	}
 	suc.ID = Hash(suc.Addr)
 	var tmpList [successorListLen]NodeRecord
-	RemoteCall(suc.Addr, "ChordNode.GetSuccessorList", nil, &tmpList)
+	RemoteCall(suc.Addr, "RPCNode.GetSuccessorList", nil, &tmpList)
 	node.successorLock.Lock()
 	node.successorList[0] = suc
 	for i := 1; i < successorListLen; i++ {
@@ -239,7 +190,7 @@ func (node *ChordNode) Join(addr string) bool {
 	// for i := 1; i < hashLength; i++ {
 	// 	start := hashAdd(node.ID, 1<<i)
 	// 	var fingerAddr string
-	// 	err = RemoteCall(suc.Addr, "ChordNode.FindSuccessor", start, &fingerAddr)
+	// 	err = RemoteCall(suc.Addr, "RPCNode.FindSuccessor", start, &fingerAddr)
 	// 	if err != nil {
 	// 		logrus.Errorf("<Join> [%s] call [%s].FindSuccessor err: %s\n", node.name(), suc.name(), err.Error())
 	// 	} else {
@@ -250,14 +201,14 @@ func (node *ChordNode) Join(addr string) bool {
 	// 	}
 	// }
 	node.dataLock.Lock()
-	err = RemoteCall(suc.Addr, "ChordNode.TransferData", node.Addr, &node.data)
+	err = RemoteCall(suc.Addr, "RPCNode.TransferData", node.Addr, &node.data)
 	node.dataLock.Unlock()
 	if err != nil {
 		logrus.Errorf("<Join> [%s] TransferData from suc [%s] err: %v\n", node.name(), suc.name(), err)
 		return false
 	}
 
-	node.setOnline()
+	node.setOnline(true)
 	node.maintain()
 	// node.stabilize()
 	// time.Sleep(200 * time.Millisecond)
@@ -313,14 +264,14 @@ func (node *ChordNode) stabilize() {
 	suc := node.getOnlineSuccessor()
 	logrus.Infof("<stabilize> [%s] online successor: [%s]\n", node.name(), suc.name())
 	var newSuc NodeRecord
-	RemoteCall(suc.Addr, "ChordNode.GetPredecessor", "", &newSuc.Addr)
+	RemoteCall(suc.Addr, "RPCNode.GetPredecessor", "", &newSuc.Addr)
 	newSuc.ID = Hash(newSuc.Addr)
 	logrus.Infof("<stabilize> newSucID %v node.ID %v suc.ID %v\n", newSuc, node.ID, suc.ID)
 	if newSuc.Addr != "" && contains(newSuc.ID, node.ID, suc.ID) {
 		suc = newSuc
 	}
 	var tmpList [successorListLen]NodeRecord
-	err := RemoteCall(suc.Addr, "ChordNode.GetSuccessorList", "", &tmpList)
+	err := RemoteCall(suc.Addr, "RPCNode.GetSuccessorList", "", &tmpList)
 	if err != nil {
 		logrus.Errorf("<stabilize> [%s] GetSuccessorList of [%s] err: %v\n", node.name(), suc.name(), err)
 		return
@@ -336,7 +287,7 @@ func (node *ChordNode) stabilize() {
 	}
 	node.successorLock.Unlock()
 	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.name(), suc.name())
-	err = RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
+	err = RemoteCall(suc.Addr, "RPCNode.Notify", node.Addr, nil)
 	if err != nil {
 		logrus.Errorf("<stabilize> [%s] notify [%s] err: %v\n", node.name(), suc.name(), err)
 	}
@@ -378,7 +329,7 @@ func (node *ChordNode) Notify(newPre string, _ *string) error {
 		logrus.Infof("<Notify> [%s] set predecessor to [%s]\n", node.name(), newPre)
 		node.setPredecessor(newPre)
 		newPreData := make(map[string]string)
-		err := RemoteCall(newPre, "ChordNode.GetData", "", &newPreData)
+		err := RemoteCall(newPre, "RPCNode.GetData", "", &newPreData)
 		if err != nil {
 			logrus.Errorf("<Notify> [%s] get data from [%s] err: %v\n", node.name(), newPre, err)
 			return err
@@ -406,7 +357,7 @@ func (node *ChordNode) mergeBackupToData() {
 
 func (node *ChordNode) backupDataToSuccessor() {
 	suc := node.getOnlineSuccessor()
-	RemoteCall(suc.Addr, "ChordNode.AddToBackup", node.data, nil)
+	RemoteCall(suc.Addr, "RPCNode.AddToBackup", node.data, nil)
 }
 
 func (node *ChordNode) checkPredecessor() {
@@ -465,15 +416,17 @@ func (node *ChordNode) Quit() {
 		return
 	}
 	logrus.Infof("<Quit> [%s]\n", node.Addr)
-	node.setOffline()
-	node.listener.Close()
+	node.setOnline(false)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	node.server.Shutdown(ctx)
 	suc := node.getOnlineSuccessor()
-	err := RemoteCall(suc.Addr, "ChordNode.CheckPredecessor", "", nil)
+	err := RemoteCall(suc.Addr, "RPCNode.CheckPredecessor", "", nil)
 	if err != nil {
 		logrus.Errorf("<Quit> [%s] call [%s] CheckPredecessor err: %v\n", node.name(), suc.name(), err)
 	}
 	pre := node.getPredecessor()
-	err = RemoteCall(pre.Addr, "ChordNode.Stabilize", "", nil)
+	err = RemoteCall(pre.Addr, "RPCNode.Stabilize", "", nil)
 	if err != nil {
 		logrus.Errorf("<Quit> [%s] call [%s] Stabilize err: %v\n", node.name(), pre.name(), err)
 	}
@@ -490,8 +443,8 @@ func (node *ChordNode) ForceQuit() {
 		return
 	}
 	logrus.Infof("<ForceQuit> [%s]\n", node.Addr)
-	node.setOffline()
-	node.listener.Close()
+	node.setOnline(false)
+	node.server.Close()
 	node.clear()
 }
 
@@ -567,7 +520,7 @@ func (node *ChordNode) FindSuccessor(input FindSucInput, result *string) error {
 		return nil
 	}
 	p := node.closestPrecedingFinger(id)
-	return RemoteCall(p, "ChordNode.FindSuccessor", FindSucInput{id, input.Depth + 1}, result)
+	return RemoteCall(p, "RPCNode.FindSuccessor", FindSucInput{id, input.Depth + 1}, result)
 }
 
 func (node *ChordNode) getOnlineSuccessor() NodeRecord {
@@ -584,7 +537,7 @@ func (node *ChordNode) getOnlineSuccessor() NodeRecord {
 			// 		node.successorList[j-i] = node.successorList[j]
 			// 	}
 			// 	node.successorLock.Unlock()
-			// 	RemoteCall(suc.Addr, "ChordNode.Notify", node.Addr, nil)
+			// 	RemoteCall(suc.Addr, "RPCNode.Notify", node.Addr, nil)
 			// }
 			return suc
 		}
@@ -621,7 +574,7 @@ func (node *ChordNode) PutValue(pair Pair, _ *string) error {
 	node.data[pair.Key] = pair.Value
 	node.dataLock.Unlock()
 	suc := node.getOnlineSuccessor()
-	err := RemoteCall(suc.Addr, "ChordNode.PutInBackup", pair, nil)
+	err := RemoteCall(suc.Addr, "RPCNode.PutInBackup", pair, nil)
 	if err != nil {
 		logrus.Errorf("<PutValue> [%s] put in [%s]'s backup, err: %v\n", node.name(), suc.name(), err)
 		return err
@@ -648,7 +601,7 @@ func (node *ChordNode) Put(key string, value string) bool {
 		logrus.Errorf("<Put> [%s] find successor of key %v err: %v\n", node.name(), key, err)
 		return false
 	}
-	err = RemoteCall(target, "ChordNode.PutValue", Pair{key, value}, nil)
+	err = RemoteCall(target, "RPCNode.PutValue", Pair{key, value}, nil)
 	if err != nil {
 		logrus.Errorf("<Put> insert to [%s] err: %v\n", target, err)
 		return false
@@ -682,7 +635,7 @@ func (node *ChordNode) Get(key string) (bool, string) {
 		return false, ""
 	}
 	var value string
-	err = RemoteCall(target, "ChordNode.GetValue", key, &value)
+	err = RemoteCall(target, "RPCNode.GetValue", key, &value)
 	if err != nil {
 		logrus.Errorf("<Get> get from [%s] err: %v\n", target, err)
 		return false, ""
@@ -699,7 +652,7 @@ func (node *ChordNode) DeleteValue(key string, _ *string) error {
 		return fmt.Errorf("key %s not exist in [%s]", key, node.Addr)
 	}
 	suc := node.getOnlineSuccessor()
-	err := RemoteCall(suc.Addr, "ChordNode.DeleteInBackup", key, nil)
+	err := RemoteCall(suc.Addr, "RPCNode.DeleteInBackup", key, nil)
 	if err != nil {
 		logrus.Errorf("<DeleteValue> delete in [%s]'s backup, err: %v\n", suc.name(), err)
 		return err
@@ -731,7 +684,7 @@ func (node *ChordNode) Delete(key string) bool {
 		logrus.Errorf("<Delete> [%s] find successor of key %v err: %v\n", node.name(), key, err)
 		return false
 	}
-	err = RemoteCall(target, "ChordNode.DeleteValue", key, nil)
+	err = RemoteCall(target, "RPCNode.DeleteValue", key, nil)
 	if err != nil {
 		logrus.Errorf("<Delete> delete from [%s] err: %v\n", target, err)
 		return false
