@@ -1,7 +1,7 @@
 package chord
 
 type RPCNode struct {
-	ptr *ChordNode
+	ptr *Node
 }
 
 type Void struct{}

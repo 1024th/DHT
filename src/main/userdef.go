@@ -11,7 +11,7 @@ import (
 
 func NewNode(port int) dhtNode {
 	// Todo: create a node and then return it.
-	node := new(chord.ChordNode)
+	node := new(chord.Node)
 	node.Initialize(GetLocalAddress() + ":" + strconv.Itoa(port))
 	return node
 }

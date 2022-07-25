@@ -1,4 +1,4 @@
-package chord
+package myrpc
 
 import (
 	"errors"
@@ -57,7 +57,7 @@ func (pool *ClientPool) Get(address string) (ClientRes, error) {
 		select {
 		case c := <-pool.clients:
 			if time.Since(c.time) > CheckConnInterval {
-				err := c.client.Call("RPCHeartbeatRcvr.Heartbeat", struct{}{}, nil)
+				err := c.client.Call("HeartbeatRcvr.Heartbeat", struct{}{}, nil)
 				if err != nil {
 					logrus.Warnf("<pool.Get> %p heartbeat fail, remove it\n", c.client)
 					c.client.Close()
@@ -132,7 +132,7 @@ func Ping(addr string) bool {
 		logrus.Warnf("<Ping> GetClient [%s] err: %v\n", addr, err)
 		return false
 	}
-	err = c.client.Call("RPCHeartbeatRcvr.Heartbeat", struct{}{}, nil)
+	err = c.client.Call("HeartbeatRcvr.Heartbeat", struct{}{}, nil)
 	if err != nil {
 		logrus.Warnf("<Ping> %p heartbeat fail\n", c.client)
 		c.client.Close()
@@ -156,6 +156,7 @@ func RemoteCall(addr string, serviceMethod string, args interface{}, reply inter
 		PutClient(addr, c)
 	} else {
 		c.client.Close()
+		logrus.Errorf("<RemoteCall> %s err: %v\n", serviceMethod, err)
 	}
 	return err
 }

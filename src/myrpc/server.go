@@ -1,4 +1,4 @@
-package chord
+package myrpc
 
 import (
 	"context"
@@ -11,38 +11,36 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type RPCHeartbeatRcvr struct{}
+type HeartbeatRcvr struct{}
 
-func (*RPCHeartbeatRcvr) Heartbeat(struct{}, *struct{}) error { return nil }
+func (*HeartbeatRcvr) Heartbeat(struct{}, *struct{}) error { return nil }
 
-type RPCServer struct {
+type Server struct {
 	listener      net.Listener
-	nodePtr       *RPCNode
-	heartbeatRcvr *RPCHeartbeatRcvr
+	heartbeatRcvr *HeartbeatRcvr
 	server        *rpc.Server
 	activeConn    map[net.Conn]struct{}
 	mu            sync.Mutex
 	inShutdown    atomic.Value
 }
 
-func (s *RPCServer) setShutdown(v bool) {
+func (s *Server) setShutdown(v bool) {
 	s.inShutdown.Store(v)
 }
 
-func (s *RPCServer) isShutdown() bool {
+func (s *Server) isShutdown() bool {
 	return s.inShutdown.Load().(bool)
 }
 
-func (s *RPCServer) Init(nodePtr *RPCNode) {
-	s.nodePtr = nodePtr
-	s.heartbeatRcvr = &RPCHeartbeatRcvr{}
+func (s *Server) Init(rcvr interface{}) {
+	s.heartbeatRcvr = &HeartbeatRcvr{}
 	s.activeConn = make(map[net.Conn]struct{})
 	s.server = rpc.NewServer()
-	s.server.Register(s.nodePtr)
+	s.server.Register(rcvr)
 	s.server.Register(s.heartbeatRcvr)
 }
 
-func (s *RPCServer) StartServing(network, address string) error {
+func (s *Server) StartServing(network, address string) error {
 	var err error
 	s.setShutdown(false)
 	s.listener, err = net.Listen(network, address)
@@ -53,7 +51,7 @@ func (s *RPCServer) StartServing(network, address string) error {
 	return nil
 }
 
-func (s *RPCServer) Serve() {
+func (s *Server) Serve() {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
@@ -77,7 +75,7 @@ func (s *RPCServer) Serve() {
 }
 
 // Close immediately closes all active connections and net.Listener.
-func (s *RPCServer) Close() {
+func (s *Server) Close() {
 	s.setShutdown(true)
 	s.mu.Lock()
 	s.listener.Close()
@@ -94,7 +92,7 @@ var shutdownPollingInterval = 50 * time.Millisecond
 // connection. If the provided context expires before the shutdown completes,
 // Shutdown closes all active connections and returns the context's error,
 // otherwise it returns any error returned from closing the Listener.
-func (s *RPCServer) Shutdown(ctx context.Context) error {
+func (s *Server) Shutdown(ctx context.Context) error {
 	s.setShutdown(true)
 	err := s.listener.Close()
 
