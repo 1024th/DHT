@@ -11,13 +11,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type RPCHeartbeatRcvr struct{}
+
+func (*RPCHeartbeatRcvr) Heartbeat(struct{}, *struct{}) error { return nil }
+
 type RPCServer struct {
-	listener   net.Listener
-	nodePtr    *RPCNode
-	server     *rpc.Server
-	activeConn map[net.Conn]struct{}
-	mu         sync.Mutex
-	inShutdown atomic.Value
+	listener      net.Listener
+	nodePtr       *RPCNode
+	heartbeatRcvr *RPCHeartbeatRcvr
+	server        *rpc.Server
+	activeConn    map[net.Conn]struct{}
+	mu            sync.Mutex
+	inShutdown    atomic.Value
 }
 
 func (s *RPCServer) setShutdown(v bool) {
@@ -30,9 +35,11 @@ func (s *RPCServer) isShutdown() bool {
 
 func (s *RPCServer) Init(nodePtr *RPCNode) {
 	s.nodePtr = nodePtr
+	s.heartbeatRcvr = &RPCHeartbeatRcvr{}
 	s.activeConn = make(map[net.Conn]struct{})
 	s.server = rpc.NewServer()
 	s.server.Register(s.nodePtr)
+	s.server.Register(s.heartbeatRcvr)
 }
 
 func (s *RPCServer) StartServing(network, address string) error {

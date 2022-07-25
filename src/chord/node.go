@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"net"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,7 +20,6 @@ const (
 	checkPredecessorInterval = 200 * time.Millisecond
 	stabilizeInterval        = 200 * time.Millisecond
 	fixFingerInterval        = 200 * time.Millisecond
-	pingTimeout              = 500 * time.Millisecond
 )
 
 type NodeRecord struct {
@@ -78,7 +75,7 @@ func (node *ChordNode) PrintSelf() {
 	logrus.Info(info)
 }
 
-func (node *ChordNode) Hello(_ string, reply *string) error {
+func (node *ChordNode) Hello(reply *string) error {
 	*reply = fmt.Sprintf("\"Hello!\", said by node [%s].\n", node.name())
 	logrus.Infoln(*reply)
 	return nil
@@ -107,7 +104,7 @@ func (node *ChordNode) Create() {
 	node.maintain()
 }
 
-func (node *ChordNode) GetSuccessorList(_ string, result *[successorListLen]NodeRecord) error {
+func (node *ChordNode) GetSuccessorList(result *[successorListLen]NodeRecord) error {
 	node.successorLock.RLock()
 	logrus.Infof("<GetSuccessorList> [%s] sucList: %s\n", node.name(), sucListToString(&node.successorList))
 	*result = node.successorList
@@ -125,7 +122,7 @@ func (node *ChordNode) GetSuccessorList(_ string, result *[successorListLen]Node
 	return nil
 }
 
-func (node *ChordNode) ShrinkBackup(removeFromBak map[string]string, _ *string) error {
+func (node *ChordNode) ShrinkBackup(removeFromBak map[string]string) error {
 	node.backupLock.Lock()
 	for k := range removeFromBak {
 		delete(node.backup, k)
@@ -175,7 +172,7 @@ func (node *ChordNode) Join(addr string) bool {
 	}
 	suc.ID = Hash(suc.Addr)
 	var tmpList [successorListLen]NodeRecord
-	err = RemoteCall(suc.Addr, "RPCNode.GetSuccessorList", "", &tmpList)
+	err = RemoteCall(suc.Addr, "RPCNode.GetSuccessorList", Void{}, &tmpList)
 	if err != nil {
 		logrus.Errorf("<Join> [%s] call [%s].GetSuccessorList err: %s\n", node.name(), addr, err)
 	}
@@ -213,7 +210,7 @@ func (node *ChordNode) Join(addr string) bool {
 
 	node.setOnline(true)
 	node.maintain()
-	// node.stabilize()
+	// node.Stabilize()
 	// time.Sleep(200 * time.Millisecond)
 	return true
 }
@@ -248,7 +245,7 @@ func (node *ChordNode) setPredecessor(newPre string) {
 	node.predecessorLock.Unlock()
 }
 
-func (node *ChordNode) GetPredecessor(_ string, addr *string) error {
+func (node *ChordNode) GetPredecessor(addr *string) error {
 	*addr = node.getPredecessor().Addr
 	return nil
 }
@@ -261,25 +258,25 @@ func sucListToString(sucList *[successorListLen]NodeRecord) string {
 	return res
 }
 
-func (node *ChordNode) stabilize() {
-	logrus.Infof("<stabilize> [%s] online: %v\n", node.name(), node.isOnline())
+func (node *ChordNode) Stabilize() error {
+	logrus.Infof("<Stabilize> [%s] online: %v\n", node.name(), node.isOnline())
 
 	suc := node.getOnlineSuccessor()
-	logrus.Infof("<stabilize> [%s] online successor: [%s]\n", node.name(), suc.name())
+	logrus.Infof("<Stabilize> [%s] online successor: [%s]\n", node.name(), suc.name())
 	var newSuc NodeRecord
-	RemoteCall(suc.Addr, "RPCNode.GetPredecessor", "", &newSuc.Addr)
+	RemoteCall(suc.Addr, "RPCNode.GetPredecessor", Void{}, &newSuc.Addr)
 	newSuc.ID = Hash(newSuc.Addr)
-	logrus.Infof("<stabilize> newSucID %v node.ID %v suc.ID %v\n", newSuc, node.ID, suc.ID)
+	logrus.Infof("<Stabilize> newSucID %v node.ID %v suc.ID %v\n", newSuc, node.ID, suc.ID)
 	if newSuc.Addr != "" && contains(newSuc.ID, node.ID, suc.ID) {
 		suc = newSuc
 	}
 	var tmpList [successorListLen]NodeRecord
-	err := RemoteCall(suc.Addr, "RPCNode.GetSuccessorList", "", &tmpList)
+	err := RemoteCall(suc.Addr, "RPCNode.GetSuccessorList", Void{}, &tmpList)
 	if err != nil {
-		logrus.Errorf("<stabilize> [%s] GetSuccessorList of [%s] err: %v\n", node.name(), suc.name(), err)
-		return
+		logrus.Errorf("<Stabilize> [%s] GetSuccessorList of [%s] err: %v\n", node.name(), suc.name(), err)
+		return fmt.Errorf("<Stabilize> [%s] GetSuccessorList of [%s] err: %v\n", node.name(), suc.name(), err)
 	}
-	logrus.Infof("<stabilize> [%s] suc [%s]'s sucList: %s\n", node.name(), suc.name(), sucListToString(&tmpList))
+	logrus.Infof("<Stabilize> [%s] suc [%s]'s sucList: %s\n", node.name(), suc.name(), sucListToString(&tmpList))
 	node.fingerLock.Lock()
 	node.finger[0] = suc
 	node.fingerLock.Unlock()
@@ -289,15 +286,11 @@ func (node *ChordNode) stabilize() {
 		node.successorList[i] = tmpList[i-1]
 	}
 	node.successorLock.Unlock()
-	logrus.Infof("<stabilize> [%s] will notify [%s]\n", node.name(), suc.name())
+	logrus.Infof("<Stabilize> [%s] will notify [%s]\n", node.name(), suc.name())
 	err = RemoteCall(suc.Addr, "RPCNode.Notify", node.Addr, nil)
 	if err != nil {
-		logrus.Errorf("<stabilize> [%s] notify [%s] err: %v\n", node.name(), suc.name(), err)
+		logrus.Errorf("<Stabilize> [%s] notify [%s] err: %v\n", node.name(), suc.name(), err)
 	}
-}
-
-func (node *ChordNode) Stabilize(_ string, _ *string) error {
-	node.stabilize()
 	return nil
 }
 
@@ -309,7 +302,7 @@ func (node *ChordNode) addToBackup(preData map[string]string) {
 	node.backupLock.Unlock()
 }
 
-func (node *ChordNode) AddToBackup(preData map[string]string, _ *string) error {
+func (node *ChordNode) AddToBackup(preData map[string]string) error {
 	node.backupLock.Lock()
 	for k, v := range preData {
 		node.backup[k] = v
@@ -318,21 +311,21 @@ func (node *ChordNode) AddToBackup(preData map[string]string, _ *string) error {
 	return nil
 }
 
-func (node *ChordNode) GetData(_ string, res *map[string]string) error {
+func (node *ChordNode) GetData(res *map[string]string) error {
 	node.dataLock.RLock()
 	*res = node.data
 	node.dataLock.RUnlock()
 	return nil
 }
 
-func (node *ChordNode) Notify(newPre string, _ *string) error {
+func (node *ChordNode) Notify(newPre string) error {
 	logrus.Infof("<Notify> [%s] newPre [%s]\n", node.name(), getPortFromIP(newPre))
 	pre := node.getPredecessor()
 	if node.Ping(newPre) && (pre.Addr == "" || contains(Hash(newPre), pre.ID, node.ID)) {
 		logrus.Infof("<Notify> [%s] set predecessor to [%s]\n", node.name(), newPre)
 		node.setPredecessor(newPre)
 		newPreData := make(map[string]string)
-		err := RemoteCall(newPre, "RPCNode.GetData", "", &newPreData)
+		err := RemoteCall(newPre, "RPCNode.GetData", Void{}, &newPreData)
 		if err != nil {
 			logrus.Errorf("<Notify> [%s] get data from [%s] err: %v\n", node.name(), newPre, err)
 			return err
@@ -363,19 +356,15 @@ func (node *ChordNode) backupDataToSuccessor() {
 	RemoteCall(suc.Addr, "RPCNode.AddToBackup", node.data, nil)
 }
 
-func (node *ChordNode) checkPredecessor() {
+func (node *ChordNode) CheckPredecessor() error {
 	pre := node.getPredecessor()
-	// logrus.Infof("<checkPredecessor> [%s] pre [%s] ping %v\n", node.name(), pre.name(), node.Ping(pre.Addr))
+	// logrus.Infof("<CheckPredecessor> [%s] pre [%s] ping %v\n", node.name(), pre.name(), node.Ping(pre.Addr))
 	if pre.Addr != "" && !node.Ping(pre.Addr) {
-		logrus.Warnf("<checkPredecessor> [%s] fail\n", node.Addr)
+		logrus.Warnf("<CheckPredecessor> [%s] fail\n", node.Addr)
 		node.setPredecessor("")
 		node.mergeBackupToData()
 		node.backupDataToSuccessor()
 	}
-}
-
-func (node *ChordNode) CheckPredecessor(_ string, _ *string) error {
-	node.checkPredecessor()
 	return nil
 }
 
@@ -388,13 +377,13 @@ func (node *ChordNode) maintain() {
 	}()
 	go func() {
 		for node.isOnline() {
-			node.stabilize()
+			node.Stabilize()
 			time.Sleep(stabilizeInterval)
 		}
 	}()
 	go func() {
 		for node.isOnline() {
-			node.checkPredecessor()
+			node.CheckPredecessor()
 			time.Sleep(checkPredecessorInterval)
 		}
 	}()
@@ -424,12 +413,12 @@ func (node *ChordNode) Quit() {
 	defer cancel()
 	node.server.Shutdown(ctx)
 	suc := node.getOnlineSuccessor()
-	err := RemoteCall(suc.Addr, "RPCNode.CheckPredecessor", "", nil)
+	err := RemoteCall(suc.Addr, "RPCNode.CheckPredecessor", Void{}, nil)
 	if err != nil {
 		logrus.Errorf("<Quit> [%s] call [%s] CheckPredecessor err: %v\n", node.name(), suc.name(), err)
 	}
 	pre := node.getPredecessor()
-	err = RemoteCall(pre.Addr, "RPCNode.Stabilize", "", nil)
+	err = RemoteCall(pre.Addr, "RPCNode.Stabilize", Void{}, nil)
 	if err != nil {
 		logrus.Errorf("<Quit> [%s] call [%s] Stabilize err: %v\n", node.name(), pre.name(), err)
 	}
@@ -453,50 +442,7 @@ func (node *ChordNode) ForceQuit() {
 
 // Check whether the node represented by the IP address is in the network.
 func (node *ChordNode) Ping(addr string) bool {
-	if addr == "" {
-		logrus.Warnf("<Ping> [%s] ping [%s] err: empty address\n", node.name(), getPortFromIP(addr))
-		return false
-	}
-	if addr == node.Addr {
-		return true
-	}
-	for i := 0; i < 3; i++ {
-		conn, err := net.DialTimeout("tcp", addr, pingTimeout)
-		if err == nil {
-			conn.Close()
-			return true
-		} else {
-			pc, _, _, _ := runtime.Caller(1)
-			details := runtime.FuncForPC(pc)
-			logrus.Warnf("<Ping> [%s] ping [%s] err: %v called by %s\n", node.name(), getPortFromIP(addr), err, details.Name())
-			if strings.Contains(err.Error(), "refused") {
-				return false
-			}
-			time.Sleep(1500 * time.Millisecond)
-		}
-		// ch := make(chan error)
-		// go func() {
-		// 	conn, err := net.Dial("tcp", addr)
-		// 	if conn != nil {
-		// 		conn.Close()
-		// 	}
-		// 	ch <- err
-		// }()
-		// select {
-		// case err := <-ch:
-		// 	if err == nil {
-		// 		return true
-		// 	} else {
-		// 		pc, _, _, _ := runtime.Caller(1)
-		// 		details := runtime.FuncForPC(pc)
-		// 		logrus.Warnf("<Ping> [%s] ping [%s] err: %v called by %s\n", node.name(), getPortFromIP(addr), err, details.Name())
-		// 		continue
-		// 	}
-		// case <-time.After(pingTimeout):
-		// 	continue
-		// }
-	}
-	return false
+	return Ping(addr)
 }
 
 type FindSucInput struct {
@@ -507,12 +453,12 @@ type FindSucInput struct {
 func (node *ChordNode) FindSuccessor(input FindSucInput, result *string) error {
 	id := input.ID
 	if !node.isOnline() {
-		return fmt.Errorf("<FindSuccessor> [%s] offline\n", node.name())
+		return fmt.Errorf("<FindSuccessor> [%s] offline", node.name())
 	}
 	// logrus.Infof("<FindSuccessor> [%s] find %s\n", node.name(), id.String())
 	suc := node.getOnlineSuccessor()
 	if suc.Addr == "" {
-		return fmt.Errorf("Cannot find successor of [%s]", node.Addr)
+		return fmt.Errorf("cannot find successor of [%s]", node.Addr)
 	}
 	logrus.Infof("<FindSuccessor> [%s] depth: %d, online successor: [%s]\n", node.name(), input.Depth, suc.name())
 	// logrus.Infof("<FindSuccessor> [%s] target: %s self: %s suc: %s contains:%v\n", node.name(), id, node.ID, suc.ID.String(), contains(id, node.ID, suc.ID))
@@ -572,7 +518,7 @@ func (node *ChordNode) closestPrecedingFinger(id *big.Int) (addr string) {
 	return node.getOnlineSuccessor().Addr
 }
 
-func (node *ChordNode) PutValue(pair Pair, _ *string) error {
+func (node *ChordNode) PutValue(pair Pair) error {
 	node.dataLock.Lock()
 	node.data[pair.Key] = pair.Value
 	node.dataLock.Unlock()
@@ -585,7 +531,7 @@ func (node *ChordNode) PutValue(pair Pair, _ *string) error {
 	return nil
 }
 
-func (node *ChordNode) PutInBackup(pair Pair, _ *string) error {
+func (node *ChordNode) PutInBackup(pair Pair) error {
 	node.backupLock.Lock()
 	node.backup[pair.Key] = pair.Value
 	node.backupLock.Unlock()
@@ -646,7 +592,7 @@ func (node *ChordNode) Get(key string) (bool, string) {
 	return true, value
 }
 
-func (node *ChordNode) DeleteValue(key string, _ *string) error {
+func (node *ChordNode) DeleteValue(key string) error {
 	node.dataLock.Lock()
 	_, ok := node.data[key]
 	delete(node.data, key)
@@ -663,7 +609,7 @@ func (node *ChordNode) DeleteValue(key string, _ *string) error {
 	return nil
 }
 
-func (node *ChordNode) DeleteInBackup(key string, _ *string) error {
+func (node *ChordNode) DeleteInBackup(key string) error {
 	node.backupLock.Lock()
 	_, ok := node.backup[key]
 	delete(node.backup, key)
